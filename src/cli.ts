@@ -26,7 +26,7 @@ Usage:
   routine stop | start | status          global kill switch
 
 Options for add and edit:
-  --rrule <RRULE>        e.g. "FREQ=DAILY;BYHOUR=7;BYMINUTE=0"
+  --rrule <RRULE>        e.g. "FREQ=DAILY;BYHOUR=7;BYMINUTE=0"; repeat for several rules
   --dtstart <date-time>  local start of the series, e.g. 2026-10-05T07:00
   --tz <zone>            time zone, e.g. Europe/Zurich
   --run <command>        shell command
@@ -45,7 +45,7 @@ Common options:
 class UsageError extends Error {}
 
 const FIELD_OPTIONS = {
-  rrule: { type: "string" },
+  rrule: { type: "string", multiple: true },
   dtstart: { type: "string" },
   tz: { type: "string" },
   run: { type: "string" },
@@ -84,13 +84,18 @@ function readBody(values: { body?: string; "body-file"?: string }): string | und
   return values.body;
 }
 
-function fieldValues(values: Record<string, string | boolean | undefined>, creating: boolean): FieldValues {
+function fieldValues(values: Record<string, string | string[] | boolean | undefined>, creating: boolean): FieldValues {
   const result: FieldValues = {};
-  for (const key of ["rrule", "dtstart", "tz", "run", "owner", "timeout", "cwd"] as const) {
+  const rrules = values.rrule;
+  if (Array.isArray(rrules)) {
+    if (rrules.some((r) => r.trim() === "")) throw new UsageError("--rrule cannot be empty");
+    result.rrule = rrules.length === 1 ? rrules[0]! : rrules;
+  }
+  for (const key of ["dtstart", "tz", "run", "owner", "timeout", "cwd"] as const) {
     const value = values[key];
     if (typeof value !== "string") continue;
     if (value === "") {
-      if (key === "rrule" || key === "run") throw new UsageError(`--${key} cannot be empty`);
+      if (key === "run") throw new UsageError(`--${key} cannot be empty`);
       if (!creating) result[key] = null;
     } else result[key] = value;
   }
@@ -116,7 +121,7 @@ interface Summary {
   owner?: string;
   active: boolean;
   running: boolean;
-  rrule: string;
+  rrules: string[];
   dtstart?: string;
   tz: string;
   timeout: string;
@@ -135,7 +140,7 @@ function summarize(paths: Paths, task: Task, nowMs: number): Summary {
     file: task.file,
     active: task.active,
     running: lockHolder(paths, task.id) !== null,
-    rrule: task.rrule,
+    rrules: task.rrules,
     tz: task.tz,
     timeout: formatDuration(task.timeoutMs),
     run: task.run,
@@ -238,7 +243,7 @@ async function main(argv: string[]): Promise<number> {
         for (const s of summaries) {
           const state = s.running ? "running" : s.active ? "active" : "paused";
           const last = s.lastRun ? `${local(s.lastRun.started, config.tz)} ${s.lastRun.status}` : "-";
-          rows.push([s.id, state, local(s.next, config.tz), last, s.rrule]);
+          rows.push([s.id, state, local(s.next, config.tz), last, s.rrules.join(" | ")]);
         }
         const lines = summaries.length ? [table(rows)] : ["no routine"];
         for (const e of shownErrors) lines.push(`invalid ${e.id}: ${e.error}`);
@@ -259,7 +264,7 @@ async function main(argv: string[]): Promise<number> {
           `id:        ${summary.id}`,
           `file:      ${summary.file}`,
           `state:     ${summary.running ? "running" : summary.active ? "active" : "paused"}`,
-          `rrule:     ${summary.rrule}`,
+          ...summary.rrules.map((r) => `rrule:     ${r}`),
           `dtstart:   ${summary.dtstart ?? "(default)"}`,
           `tz:        ${summary.tz}`,
           `run:       ${summary.run}`,

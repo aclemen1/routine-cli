@@ -30,7 +30,7 @@ Text passed on stdin.
 
 | Field | Meaning | Default |
 |---|---|---|
-| `rrule` | RRULE value, without `DTSTART` | required |
+| `rrule` | RRULE value without `DTSTART`, or a list of them | required |
 | `dtstart` | Local start of the series, e.g. `2026-10-05T07:00` | `2026-01-01T00:00` |
 | `tz` | Time zone of `dtstart` and the rule | config `tz` |
 | `run` | Shell command | required |

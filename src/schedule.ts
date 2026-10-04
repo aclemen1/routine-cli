@@ -3,55 +3,65 @@ import { Temporal } from "temporal-polyfill";
 
 export const DEFAULT_DTSTART = "2026-01-01T00:00";
 
+// Several rules form one schedule: the union of their occurrences.
 export interface Schedule {
-  rule: RRuleTemporal;
+  rules: RRuleTemporal[];
   tz: string;
 }
 
-export function buildSchedule(rrule: string, dtstart: string | undefined, tz: string): Schedule {
-  const ruleText = rrule.trim().replace(/^RRULE:/i, "");
-  if (/DTSTART/i.test(ruleText) || ruleText.includes("\n")) {
-    throw new Error("rrule must hold only the RRULE value; give the start in dtstart");
-  }
+export function buildSchedule(rrules: string | string[], dtstart: string | undefined, tz: string): Schedule {
+  const list = typeof rrules === "string" ? [rrules] : rrules;
+  if (list.length === 0) throw new Error("rrule is empty");
   let start: Temporal.ZonedDateTime;
   try {
     start = Temporal.PlainDateTime.from(dtstart ?? DEFAULT_DTSTART).toZonedDateTime(tz);
   } catch {
     throw new Error(`invalid dtstart: ${JSON.stringify(dtstart)} (expected local date-time, e.g. 2026-10-05T07:00)`);
   }
-  let rule: RRuleTemporal;
-  try {
-    rule = new RRuleTemporal({ rruleString: ruleText, dtstart: start });
-  } catch (error) {
-    throw new Error(`invalid rrule ${JSON.stringify(rrule)}: ${(error as Error).message}`);
-  }
-  return { rule, tz };
+  const rules = list.map((rrule) => {
+    const ruleText = rrule.trim().replace(/^RRULE:/i, "");
+    if (/DTSTART/i.test(ruleText) || ruleText.includes("\n")) {
+      throw new Error("rrule must hold only the RRULE value; give the start in dtstart");
+    }
+    try {
+      return new RRuleTemporal({ rruleString: ruleText, dtstart: start });
+    } catch (error) {
+      throw new Error(`invalid rrule ${JSON.stringify(rrule)}: ${(error as Error).message}`);
+    }
+  });
+  return { rules, tz };
+}
+
+function zoned(ms: number, tz: string) {
+  return Temporal.Instant.fromEpochMilliseconds(ms).toZonedDateTimeISO(tz);
 }
 
 // The latest occurrence in (floor, now], or null. Many missed occurrences collapse into one.
 export function dueOccurrence(schedule: Schedule, floorMs: number, nowMs: number): number | null {
-  const now = Temporal.Instant.fromEpochMilliseconds(nowMs).toZonedDateTimeISO(schedule.tz);
-  const previous = schedule.rule.previous(now, true);
-  if (!previous || previous.epochMilliseconds <= floorMs) return null;
-  return previous.epochMilliseconds;
+  let latest: number | null = null;
+  for (const rule of schedule.rules) {
+    const previous = rule.previous(zoned(nowMs, schedule.tz), true);
+    if (previous && previous.epochMilliseconds > floorMs && (latest === null || previous.epochMilliseconds > latest)) {
+      latest = previous.epochMilliseconds;
+    }
+  }
+  return latest;
 }
 
 export function nextOccurrences(schedule: Schedule, afterMs: number, count: number): number[] {
-  const result: number[] = [];
-  let cursor = Temporal.Instant.fromEpochMilliseconds(afterMs).toZonedDateTimeISO(schedule.tz);
-  while (result.length < count) {
-    const next = schedule.rule.next(cursor, false);
-    if (!next) break;
-    result.push(next.epochMilliseconds);
-    cursor = Temporal.Instant.fromEpochMilliseconds(next.epochMilliseconds).toZonedDateTimeISO(schedule.tz);
+  const all = new Set<number>();
+  for (const rule of schedule.rules) {
+    let cursor = afterMs;
+    for (let i = 0; i < count; i++) {
+      const next = rule.next(zoned(cursor, schedule.tz), false);
+      if (!next) break;
+      all.add(next.epochMilliseconds);
+      cursor = next.epochMilliseconds;
+    }
   }
-  return result;
+  return [...all].sort((a, b) => a - b).slice(0, count);
 }
 
 export function formatLocal(ms: number, tz: string): string {
-  return Temporal.Instant.fromEpochMilliseconds(ms)
-    .toZonedDateTimeISO(tz)
-    .toPlainDateTime()
-    .toString({ smallestUnit: "minute" })
-    .replace("T", " ");
+  return zoned(ms, tz).toPlainDateTime().toString({ smallestUnit: "minute" }).replace("T", " ");
 }

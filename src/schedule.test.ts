@@ -29,6 +29,17 @@ test("a one-shot rule fires once", () => {
   assert.deepEqual(nextOccurrences(s, at("2026-10-11T00:00:00"), 3), []);
 });
 
+test("several rules form the union of their occurrences", () => {
+  const s = buildSchedule(["FREQ=DAILY;BYHOUR=6;BYMINUTE=3", "FREQ=DAILY;BYHOUR=12,18;BYMINUTE=35"], undefined, TZ);
+  assert.deepEqual(nextOccurrences(s, at("2026-10-04T05:00:00"), 4), [
+    at("2026-10-04T06:03:00"),
+    at("2026-10-04T12:35:00"),
+    at("2026-10-04T18:35:00"),
+    at("2026-10-05T06:03:00"),
+  ]);
+  assert.equal(dueOccurrence(s, at("2026-10-04T06:03:00"), at("2026-10-04T19:00:00")), at("2026-10-04T18:35:00"));
+});
+
 test("invalid input is rejected", () => {
   assert.throws(() => buildSchedule("FREQ=SOMETIMES", undefined, TZ), /invalid rrule/);
   assert.throws(() => buildSchedule("DTSTART:20260101T000000\nRRULE:FREQ=DAILY", undefined, TZ), /dtstart/);

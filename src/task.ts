@@ -8,7 +8,7 @@ import { buildSchedule, type Schedule } from "./schedule.ts";
 export interface Task {
   id: string;
   file: string;
-  rrule: string;
+  rrules: string[];
   dtstart?: string;
   tz: string;
   active: boolean;
@@ -66,8 +66,12 @@ export function parseTask(id: string, file: string, text: string, config: Config
     if (typeof value !== "string" && typeof value !== "number") throw new Error(`${key} must be a string`);
     return String(value);
   };
-  const rrule = str("rrule");
-  if (!rrule) throw new Error("missing rrule");
+  const rawRrule = fm.rrule;
+  const rrules = Array.isArray(rawRrule) ? rawRrule : rawRrule === undefined || rawRrule === null ? [] : [rawRrule];
+  if (rrules.length === 0) throw new Error("missing rrule");
+  if (!rrules.every((r): r is string => typeof r === "string" && r.trim() !== "")) {
+    throw new Error("rrule must be a string or a list of strings");
+  }
   const run = str("run");
   if (!run) throw new Error("missing run");
   if (fm.active !== undefined && typeof fm.active !== "boolean") throw new Error("active must be true or false");
@@ -77,13 +81,13 @@ export function parseTask(id: string, file: string, text: string, config: Config
   const task: Task = {
     id,
     file,
-    rrule,
+    rrules,
     tz,
     active: fm.active !== false,
     timeoutMs: timeout === undefined ? config.timeoutMs : parseDuration(timeout as string | number),
     run,
     body: body.trim() ? body : "",
-    schedule: buildSchedule(rrule, dtstart, tz),
+    schedule: buildSchedule(rrules, dtstart, tz),
   };
   if (dtstart !== undefined) task.dtstart = dtstart;
   const owner = str("owner");
@@ -123,7 +127,7 @@ export function loadTasks(tasksDir: string, config: Config): { tasks: Task[]; er
   return { tasks, errors };
 }
 
-export type FieldValues = Partial<Record<Field, string | boolean | null>>;
+export type FieldValues = Partial<Record<Field, string | string[] | boolean | null>>;
 
 // Sets fields in place (null removes one), keeping comments and the order of existing keys.
 export function writeTaskFile(file: string, values: FieldValues, body: string | undefined): void {

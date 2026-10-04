@@ -70,6 +70,14 @@ test("add, list, edit, pause, show, run, log, rm", () => {
   assert.equal(r.code, 1);
 });
 
+test("a repeated --rrule writes a list", () => {
+  const dir = setup();
+  const r = cli(dir, "add", "capteurs", "--rrule", "FREQ=DAILY;BYHOUR=6;BYMINUTE=3", "--rrule", "FREQ=DAILY;BYHOUR=12,18;BYMINUTE=35", "--run", "true", "--json");
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual((JSON.parse(r.stdout) as { rrules: string[] }).rrules, ["FREQ=DAILY;BYHOUR=6;BYMINUTE=3", "FREQ=DAILY;BYHOUR=12,18;BYMINUTE=35"]);
+  assert.match(readFileSync(join(dir, "config", "tasks", "capteurs.md"), "utf8"), /^rrule:\n  - FREQ=DAILY;BYHOUR=6;BYMINUTE=3\n  - FREQ=DAILY;BYHOUR=12,18;BYMINUTE=35\n/m);
+});
+
 test("usage errors exit with 2, check reports invalid files", () => {
   const dir = setup();
   assert.equal(cli(dir, "add", "x", "--rrule", "FREQ=DAILY").code, 2);
