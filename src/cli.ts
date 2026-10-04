@@ -52,6 +52,7 @@ Options for add and edit:
   --close <policy>       ACP session close: on-success (default), always, never
   --permissions <p>      answer to ACP permission requests: reject (default), allow
   --owner <owner>        e.g. office:perso/P-0014
+  --meta <json>          free object kept as is, e.g. '{"states":["open","waiting"]}'
   --timeout <duration>   e.g. 30s, 10m, 1h
   --cwd <dir>            working directory (default: home)
   --body <text>          body of the routine
@@ -73,6 +74,7 @@ const FIELD_OPTIONS = {
   "acp-command": { type: "string" },
   "acp-arg": { type: "string", multiple: true },
   "acp-meta": { type: "string" },
+  meta: { type: "string" },
   close: { type: "string" },
   permissions: { type: "string" },
   owner: { type: "string" },
@@ -149,6 +151,20 @@ function routineInput(flags: FieldFlags, current?: RoutineInput["acp"]): Routine
       }
     } else if (current?.meta) acp.meta = current.meta;
     input.acp = acp;
+  }
+  const meta = str("meta");
+  if (meta !== undefined) {
+    if (meta === "") input.meta = null;
+    else {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(meta);
+      } catch {
+        throw new UsageError("--meta expects a JSON object");
+      }
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new UsageError("--meta expects a JSON object");
+      input.meta = parsed as Record<string, unknown>;
+    }
   }
   const body = str("body");
   const bodyFile = str("body-file");
@@ -235,11 +251,11 @@ async function main(argv: string[]): Promise<number> {
       noPositional("ls", positionals);
       const result = listRoutines(ctx, values.owner);
       print(values.json, result, () => {
-        const rows = [["ID", "STATE", "NEXT", "LAST RUN", "RRULE"]];
+        const rows = [["ID", "STATE", "NEXT", "LAST RUN", "META", "RRULE"]];
         for (const s of result.routines) {
           const state = s.running ? "running" : s.active ? "active" : "paused";
           const last = s.lastRun ? `${local(s.lastRun.started, tz)} ${s.lastRun.status}` : "-";
-          rows.push([s.id, state, local(s.next, tz), last, s.rrules.join(" | ")]);
+          rows.push([s.id, state, local(s.next, tz), last, s.meta ? JSON.stringify(s.meta) : "-", s.rrules.join(" | ")]);
         }
         const lines = result.routines.length ? [table(rows)] : ["no routine"];
         for (const e of result.errors) lines.push(`invalid ${e.id}: ${e.error}`);
@@ -268,6 +284,7 @@ async function main(argv: string[]): Promise<number> {
         lines.push(`timeout:   ${detail.timeout}`);
         if (detail.cwd) lines.push(`cwd:       ${detail.cwd}`);
         if (detail.owner) lines.push(`owner:     ${detail.owner}`);
+        if (detail.meta) lines.push(`meta:      ${JSON.stringify(detail.meta)}`);
         lines.push(`upcoming:  ${detail.upcoming.length ? detail.upcoming.map((iso) => local(iso, detail.tz)).join(", ") : "-"}`);
         lines.push(`last run:  ${detail.lastRun ? runLine(detail.lastRun, detail.tz) : "-"}`);
         if (detail.body) lines.push("", detail.body.trimEnd());

@@ -41,6 +41,7 @@ const fields = {
   cwd: z.string().describe("Working directory (default home)"),
   timeout: z.string().describe("Duration such as 30s, 10m, 1h30m"),
   owner: z.string().describe("Label of the program that manages the routine, e.g. office:perso/P-0014"),
+  meta: z.record(z.string(), z.unknown()).describe("Free object kept as is and returned by list and show; ignored for scheduling"),
   body: z.string().describe("Body: stdin of the command, or the ACP prompt"),
 };
 

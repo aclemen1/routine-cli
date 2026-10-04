@@ -36,6 +36,7 @@ export interface RoutineInput {
   acp?: { command: string; args?: string[]; meta?: Record<string, unknown> };
   close?: ClosePolicy | null;
   permissions?: PermissionPolicy | null;
+  meta?: Record<string, unknown> | null;
   cwd?: string | null;
   timeout?: string | null;
   owner?: string | null;
@@ -55,6 +56,7 @@ export interface Summary {
   cwd?: string;
   run?: string;
   acp?: AcpSpec;
+  meta?: Record<string, unknown>;
   next: string | null;
   lastScheduled?: string;
   lastRun?: RunRecord;
@@ -87,6 +89,7 @@ function toFieldValues(input: RoutineInput): FieldValues {
     const value = input[key];
     if (value !== undefined) values[key] = value === null || value === "" ? null : value;
   }
+  if (input.meta !== undefined) values.meta = input.meta === null || Object.keys(input.meta).length === 0 ? null : input.meta;
   if (input.run !== undefined && input.acp !== undefined) throw new Error("give run or acp, not both");
   if (input.run !== undefined) {
     if (!input.run.trim()) throw new Error("run cannot be empty");
@@ -136,6 +139,7 @@ export function summarize(ctx: Context, task: Task, nowMs = Date.now()): Summary
   if (task.cwd) summary.cwd = task.cwd;
   if (task.run) summary.run = task.run;
   if (task.acp) summary.acp = task.acp;
+  if (task.meta) summary.meta = task.meta;
   if (state?.lastScheduled) summary.lastScheduled = state.lastScheduled;
   if (state?.lastRun) summary.lastRun = state.lastRun;
   return summary;

@@ -40,6 +40,7 @@ Text passed on stdin.
 | `cwd` | Working directory | home |
 | `timeout` | `30s`, `10m`, `1h30m` | config `timeout` |
 | `owner` | Free label for the program that manages the routine | none |
+| `meta` | Free mapping kept as is, returned by `ls` and `show`, ignored for scheduling | none |
 | `active` | `false` pauses the routine | `true` |
 
 A one-shot routine is `FREQ=DAILY;COUNT=1` with `dtstart` set to its time.
@@ -88,7 +89,7 @@ retention_days: 14
 
 ```sh
 routine add <id> --rrule <RRULE> (--run <command> | --acp-command <cmd> [--acp-arg=<arg>…] [--acp-meta <json>] [--close --permissions])
-              [--dtstart --tz --cwd --timeout --owner --body | --body-file] [--paused]
+              [--dtstart --tz --cwd --timeout --owner --meta <json> --body | --body-file] [--paused]
 routine edit <id> [same options]       # an empty value removes an optional field
 routine pause <id> | resume <id> | rm <id>
 routine ls [--owner <owner>[*]]

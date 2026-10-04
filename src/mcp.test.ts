@@ -39,7 +39,12 @@ test("MCP tools create, list, edit and remove routines", async () => {
     assert.equal(r.error, true);
     assert.match(r.data, /run or acp/);
 
-    r = await call("routine_edit", { id: "office/perso-p-0014-brief", close: "never", owner: null });
+    r = await call("routine_edit", { id: "office/perso-p-0014-brief", meta: { states: ["open", "waiting"] } });
+    assert.deepEqual(r.data.meta, { states: ["open", "waiting"] });
+    r = await call("routine_show", { id: "office/perso-p-0014-brief" });
+    assert.deepEqual(r.data.meta, { states: ["open", "waiting"] });
+    r = await call("routine_edit", { id: "office/perso-p-0014-brief", close: "never", owner: null, meta: null });
+    assert.equal(r.data.meta, undefined);
     assert.equal(r.data.acp.close, "never");
     assert.equal(r.data.owner, undefined);
 

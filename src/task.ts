@@ -17,6 +17,7 @@ export interface Task {
   cwd?: string;
   run?: string;
   acp?: AcpSpec;
+  meta?: Record<string, unknown>;
   body: string;
   schedule: Schedule;
 }
@@ -63,7 +64,7 @@ export interface TaskError {
   error: string;
 }
 
-export const FIELDS = ["rrule", "dtstart", "tz", "run", "acp", "close", "permissions", "cwd", "timeout", "owner", "active"] as const;
+export const FIELDS = ["rrule", "dtstart", "tz", "run", "acp", "close", "permissions", "cwd", "timeout", "owner", "meta", "active"] as const;
 export type Field = (typeof FIELDS)[number];
 const FIELD_SET = new Set<string>(FIELDS);
 const ID_RE = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/;
@@ -117,6 +118,9 @@ export function parseTask(id: string, file: string, text: string, config: Config
   }
   const acp = fm.acp === undefined ? undefined : parseAcp(fm.acp, fm.close, fm.permissions);
   if (acp && !body.trim()) throw new Error("an acp routine needs a prompt in its body");
+  if (fm.meta !== undefined && fm.meta !== null && (typeof fm.meta !== "object" || Array.isArray(fm.meta))) {
+    throw new Error("meta must be a mapping");
+  }
   if (fm.active !== undefined && typeof fm.active !== "boolean") throw new Error("active must be true or false");
   const dtstart = str("dtstart");
   const tz = checkTimeZone(str("tz") ?? config.tz);
@@ -133,6 +137,7 @@ export function parseTask(id: string, file: string, text: string, config: Config
   };
   if (run) task.run = run;
   if (acp) task.acp = acp;
+  if (fm.meta) task.meta = fm.meta as Record<string, unknown>;
   if (dtstart !== undefined) task.dtstart = dtstart;
   const owner = str("owner");
   if (owner !== undefined) task.owner = owner;

@@ -78,6 +78,20 @@ test("a repeated --rrule writes a list", () => {
   assert.match(readFileSync(join(dir, "config", "tasks", "capteurs.md"), "utf8"), /^rrule:\n  - FREQ=DAILY;BYHOUR=6;BYMINUTE=3\n  - FREQ=DAILY;BYHOUR=12,18;BYMINUTE=35\n/m);
 });
 
+test("meta is kept as is, shown by ls and show, removed by an empty value", () => {
+  const dir = setup();
+  let r = cli(dir, "add", "m", "--rrule", "FREQ=DAILY", "--run", "true", "--meta", '{"states":["open","waiting"]}');
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(readFileSync(join(dir, "config", "tasks", "m.md"), "utf8"), /meta:\n  states:\n    - open\n    - waiting\n/);
+  assert.deepEqual((JSON.parse(cli(dir, "show", "m", "--json").stdout) as { meta: unknown }).meta, { states: ["open", "waiting"] });
+  assert.match(cli(dir, "ls").stdout, /\{"states":\["open","waiting"\]\}/);
+  assert.match(cli(dir, "show", "m").stdout, /meta: +\{"states":\["open","waiting"\]\}/);
+  assert.equal(cli(dir, "edit", "m", "--meta", "[1]").code, 2);
+  r = cli(dir, "edit", "m", "--meta", "", "--json");
+  assert.equal((JSON.parse(r.stdout) as { meta?: unknown }).meta, undefined);
+  assert.doesNotMatch(readFileSync(join(dir, "config", "tasks", "m.md"), "utf8"), /meta/);
+});
+
 test("usage errors exit with 2, check reports invalid files", () => {
   const dir = setup();
   assert.equal(cli(dir, "add", "x", "--rrule", "FREQ=DAILY").code, 2);
