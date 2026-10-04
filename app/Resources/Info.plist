@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>aero.clement.routine</string>
+  <key>CFBundleName</key>
+  <string>Routine</string>
+  <key>CFBundleDisplayName</key>
+  <string>Routine</string>
+  <key>CFBundleExecutable</key>
+  <string>Routine</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>fr</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>14.0</string>
+  <key>LSUIElement</key>
+  <true/>
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright 2026 Alain Clément</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Les routines pilotent d'autres apps par AppleScript.</string>
+  <key>NSRemindersUsageDescription</key>
+  <string>Les routines lisent et modifient vos rappels.</string>
+  <key>NSRemindersFullAccessUsageDescription</key>
+  <string>Les routines lisent et modifient vos rappels.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>Les routines lisent et modifient votre calendrier.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Les routines lisent et modifient votre calendrier.</string>
+  <key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+  <string>Les routines ajoutent des événements à votre calendrier.</string>
+  <key>NSContactsUsageDescription</key>
+  <string>Les routines lisent vos contacts.</string>
+  <key>NSPhotoLibraryUsageDescription</key>
+  <string>Les routines lisent votre photothèque.</string>
+</dict>
+</plist>

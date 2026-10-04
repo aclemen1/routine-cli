@@ -83,9 +83,18 @@ Every command takes `--json`. Exit codes: 0 success, 1 failure, 2 usage error.
 
 ```sh
 npm install && npm run build
-cp contrib/aero.clement.routine.plist ~/Library/LaunchAgents/
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/aero.clement.routine.plist
+app/scripts/build-app.sh --install     # add --notarize for a notarized build
 ```
+
+`Routine.app` is a menu-bar app that runs `routine tick` every minute and on wake. Routines it starts inherit its TCC grants (Full Disk Access, Automation, Accessibility…), which its Access window checks and requests. Turn on "Ouvrir au démarrage" in its menu.
+
+| Setting (`defaults write aero.clement.routine …`) | Default |
+|---|---|
+| `nodePath` | `/opt/homebrew/bin/node` |
+| `cliPath` | `~/code/aclemen1/routine-cli/dist/cli.js` |
+| `automationTargets` (array of bundle ids) | Finder, System Events, Mail, Notes, Messages |
+
+Without the app, `contrib/aero.clement.routine.plist` runs the tick from launchd; routines then hold no TCC grant of their own.
 
 ## Development
 
