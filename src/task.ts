@@ -15,9 +15,46 @@ export interface Task {
   owner?: string;
   timeoutMs: number;
   cwd?: string;
-  run: string;
+  run?: string;
+  acp?: AcpSpec;
   body: string;
   schedule: Schedule;
+}
+
+export type ClosePolicy = "on-success" | "always" | "never";
+export type PermissionPolicy = "reject" | "allow";
+
+export interface AcpSpec {
+  command: string;
+  args: string[];
+  meta?: Record<string, unknown>;
+  close: ClosePolicy;
+  permissions: PermissionPolicy;
+}
+
+function parseAcp(value: unknown, close: unknown, permissions: unknown): AcpSpec {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("acp must be a mapping");
+  const acp = value as Record<string, unknown>;
+  for (const key of Object.keys(acp)) {
+    if (!["command", "args", "meta"].includes(key)) throw new Error(`unknown field acp.${key}`);
+  }
+  if (typeof acp.command !== "string" || !acp.command.trim()) throw new Error("acp.command must be a non-empty string");
+  const args = acp.args ?? [];
+  if (!Array.isArray(args) || !args.every((a) => typeof a === "string" || typeof a === "number")) {
+    throw new Error("acp.args must be a list of strings");
+  }
+  if (acp.meta !== undefined && (typeof acp.meta !== "object" || acp.meta === null || Array.isArray(acp.meta))) {
+    throw new Error("acp.meta must be a mapping");
+  }
+  const closePolicy = close ?? "on-success";
+  if (closePolicy !== "on-success" && closePolicy !== "always" && closePolicy !== "never") {
+    throw new Error("close must be on-success, always or never");
+  }
+  const permissionPolicy = permissions ?? "reject";
+  if (permissionPolicy !== "reject" && permissionPolicy !== "allow") throw new Error("permissions must be reject or allow");
+  const spec: AcpSpec = { command: acp.command, args: args.map(String), close: closePolicy, permissions: permissionPolicy };
+  if (acp.meta !== undefined) spec.meta = acp.meta as Record<string, unknown>;
+  return spec;
 }
 
 export interface TaskError {
@@ -26,7 +63,7 @@ export interface TaskError {
   error: string;
 }
 
-export const FIELDS = ["rrule", "dtstart", "tz", "run", "cwd", "timeout", "owner", "active"] as const;
+export const FIELDS = ["rrule", "dtstart", "tz", "run", "acp", "close", "permissions", "cwd", "timeout", "owner", "active"] as const;
 export type Field = (typeof FIELDS)[number];
 const FIELD_SET = new Set<string>(FIELDS);
 const ID_RE = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/;
@@ -73,7 +110,13 @@ export function parseTask(id: string, file: string, text: string, config: Config
     throw new Error("rrule must be a string or a list of strings");
   }
   const run = str("run");
-  if (!run) throw new Error("missing run");
+  if (run !== undefined && fm.acp !== undefined) throw new Error("give run or acp, not both");
+  if (!run && fm.acp === undefined) throw new Error("missing run or acp");
+  if (fm.acp === undefined && (fm.close !== undefined || fm.permissions !== undefined)) {
+    throw new Error("close and permissions apply only to acp routines");
+  }
+  const acp = fm.acp === undefined ? undefined : parseAcp(fm.acp, fm.close, fm.permissions);
+  if (acp && !body.trim()) throw new Error("an acp routine needs a prompt in its body");
   if (fm.active !== undefined && typeof fm.active !== "boolean") throw new Error("active must be true or false");
   const dtstart = str("dtstart");
   const tz = checkTimeZone(str("tz") ?? config.tz);
@@ -85,10 +128,11 @@ export function parseTask(id: string, file: string, text: string, config: Config
     tz,
     active: fm.active !== false,
     timeoutMs: timeout === undefined ? config.timeoutMs : parseDuration(timeout as string | number),
-    run,
     body: body.trim() ? body : "",
     schedule: buildSchedule(rrules, dtstart, tz),
   };
+  if (run) task.run = run;
+  if (acp) task.acp = acp;
   if (dtstart !== undefined) task.dtstart = dtstart;
   const owner = str("owner");
   if (owner !== undefined) task.owner = owner;
@@ -127,7 +171,7 @@ export function loadTasks(tasksDir: string, config: Config): { tasks: Task[]; er
   return { tasks, errors };
 }
 
-export type FieldValues = Partial<Record<Field, string | string[] | boolean | null>>;
+export type FieldValues = Partial<Record<Field, string | string[] | boolean | Record<string, unknown> | null>>;
 
 // Sets fields in place (null removes one), keeping comments and the order of existing keys.
 export function writeTaskFile(file: string, values: FieldValues, body: string | undefined): void {

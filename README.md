@@ -33,7 +33,10 @@ Text passed on stdin.
 | `rrule` | RRULE value without `DTSTART`, or a list of them | required |
 | `dtstart` | Local start of the series, e.g. `2026-10-05T07:00` | `2026-01-01T00:00` |
 | `tz` | Time zone of `dtstart` and the rule | config `tz` |
-| `run` | Shell command | required |
+| `run` | Shell command | `run` or `acp` |
+| `acp` | ACP server to prompt: `command`, `args`, `meta` | `run` or `acp` |
+| `close` | ACP session close: `on-success`, `always`, `never` | `on-success` |
+| `permissions` | Answer to ACP permission requests: `reject`, `allow` | `reject` |
 | `cwd` | Working directory | home |
 | `timeout` | `30s`, `10m`, `1h30m` | config `timeout` |
 | `owner` | Free label for the program that manages the routine | none |
@@ -42,6 +45,25 @@ Text passed on stdin.
 A one-shot routine is `FREQ=DAILY;COUNT=1` with `dtstart` set to its time.
 
 The command runs in `shell` (default `/bin/zsh -lc`, so the login profile is read) with `ROUTINE_ID`, `ROUTINE_SCHEDULED` (the occurrence, UTC) and `ROUTINE_LOG` in its environment.
+
+## ACP routines
+
+A routine with `acp` starts the ACP server, opens a session in `cwd` (`session/new`, with `meta` as `_meta`), sends the body as the prompt and waits for the end of the turn. The run is `ok` when the turn ends with `end_turn`. Past its timeout, the prompt gets `session/cancel`. Agent messages, tool calls and permission answers go to the run log. `routine` knows nothing of any particular server; server options go in `args` and `meta`.
+
+```markdown
+---
+rrule: FREQ=DAILY;BYHOUR=7;BYMINUTE=0
+acp:
+  command: herdr-acp
+  args: [--workspace, routine]
+  meta: { herdr: { tabLabel: briefing } }
+close: on-success
+cwd: ~/offices/perso
+timeout: 20m
+---
+
+Prepare today's briefing and send it to me.
+```
 
 ## Config
 
@@ -65,7 +87,8 @@ retention_days: 14
 ## Commands
 
 ```sh
-routine add <id> --rrule <RRULE> --run <command> [--dtstart --tz --cwd --timeout --owner --body | --body-file] [--paused]
+routine add <id> --rrule <RRULE> (--run <command> | --acp-command <cmd> [--acp-arg=<arg>…] [--acp-meta <json>] [--close --permissions])
+              [--dtstart --tz --cwd --timeout --owner --body | --body-file] [--paused]
 routine edit <id> [same options]       # an empty value removes an optional field
 routine pause <id> | resume <id> | rm <id>
 routine ls [--owner <owner>[*]]
@@ -75,9 +98,18 @@ routine log [<id>] [-n <count>]
 routine check
 routine tick [--foreground]
 routine stop | start | status
+routine mcp                            # MCP server on stdio
 ```
 
 Every command takes `--json`. Exit codes: 0 success, 1 failure, 2 usage error.
+
+## MCP
+
+`routine mcp` serves the same operations as tools: `routine_list`, `routine_show`, `routine_add`, `routine_edit`, `routine_pause`, `routine_resume`, `routine_remove`, `routine_run`, `routine_log`, `routine_check`, `routine_status`, `routine_stop`, `routine_start`.
+
+```sh
+claude mcp add --scope user routine -- node ~/code/aclemen1/routine-cli/dist/cli.js mcp
+```
 
 ## Install
 

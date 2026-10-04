@@ -14,6 +14,8 @@ export interface RunRecord {
   scheduled?: string;
   manual?: boolean;
   error?: string;
+  sessionId?: string;
+  stopReason?: string;
 }
 
 export interface TaskState {

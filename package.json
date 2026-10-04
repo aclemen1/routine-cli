@@ -23,9 +23,12 @@
   "author": "Alain Clément",
   "license": "Apache-2.0",
   "dependencies": {
+    "@agentclientprotocol/sdk": "^1.7.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "rrule-temporal": "^2.2.8",
     "temporal-polyfill": "^1.0.5",
-    "yaml": "^2.9.1"
+    "yaml": "^2.9.1",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

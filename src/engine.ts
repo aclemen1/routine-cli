@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Config } from "./config.ts";
-import { runCommand } from "./execute.ts";
+import { runTask } from "./execute.ts";
 import type { Paths } from "./paths.ts";
 import { dueOccurrence } from "./schedule.ts";
 import { appendJournal, floorMs, readState, tryLock, writeState, type RunRecord, type TaskState } from "./state.ts";
@@ -52,7 +52,7 @@ export async function execScheduled(paths: Paths, config: Config, id: string, no
     if (due === null) return { id, outcome: "not-due" };
     const scheduled = new Date(due).toISOString();
     writeState(paths, id, { ...state, lastScheduled: scheduled });
-    const record = await runCommand(task, config, paths, { scheduled });
+    const record = await runTask(task, config, paths, { scheduled });
     writeState(paths, id, { ...(readState(paths, id) ?? state), lastScheduled: scheduled, lastRun: record });
     appendJournal(paths, record);
     return { id, outcome: "ran", record };
@@ -67,7 +67,7 @@ export async function runNow(paths: Paths, config: Config, id: string): Promise<
   const release = tryLock(paths, id);
   if (!release) return { id, outcome: "busy" };
   try {
-    const record = await runCommand(task, config, paths, { manual: true });
+    const record = await runTask(task, config, paths, { manual: true });
     const state = readState(paths, id) ?? syncState(task, undefined, Date.parse(record.started));
     writeState(paths, id, { ...state, lastRun: record });
     appendJournal(paths, record);
