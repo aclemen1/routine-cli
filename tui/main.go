@@ -194,6 +194,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 	case tea.BackgroundColorMsg:
 		darkBackground = msg.IsDark()
+	case tea.FocusMsg:
+		paneFocused = true
+	case tea.BlurMsg:
+		paneFocused = false
 	case tickMsg:
 		return m, tea.Batch(m.refresh(), tick())
 	case listMsg:

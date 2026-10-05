@@ -40,6 +40,13 @@ test("several rules form the union of their occurrences", () => {
   assert.equal(dueOccurrence(s, at("2026-10-04T06:03:00"), at("2026-10-04T19:00:00")), at("2026-10-04T18:35:00"));
 });
 
+test("rules that differ only by their times read as one sentence", () => {
+  assert.equal(buildSchedule(["FREQ=DAILY;BYHOUR=6;BYMINUTE=3", "FREQ=DAILY;BYHOUR=12,18;BYMINUTE=35"], undefined, TZ).text, "every day at 6:03 AM, 12:35 PM and 6:35 PM");
+  assert.equal(buildSchedule(["FREQ=DAILY;BYHOUR=7;BYMINUTE=0", "FREQ=WEEKLY;BYDAY=MO;BYHOUR=8;BYMINUTE=0"], undefined, TZ).text, "every day at 7 AM; every week on Monday at 8 AM");
+  assert.equal(buildSchedule("FREQ=MINUTELY;INTERVAL=5", undefined, TZ).text, "every 5 minutes");
+  assert.equal(buildSchedule("FREQ=DAILY;COUNT=1", "2026-10-10T09:00", TZ).text, "once, on 2026-10-10 09:00");
+});
+
 test("invalid input is rejected", () => {
   assert.throws(() => buildSchedule("FREQ=SOMETIMES", undefined, TZ), /invalid rrule/);
   assert.throws(() => buildSchedule("DTSTART:20260101T000000\nRRULE:FREQ=DAILY", undefined, TZ), /dtstart/);

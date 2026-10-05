@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Colours and their names follow the office TUI.
@@ -36,7 +37,11 @@ var (
 	cReady   = adaptive{Light: "#2F855A", Dark: "#68D391"}
 	cStopped = adaptive{Light: "#C53030", Dark: "#FC8181"}
 	cSelBg   = adaptive{Light: "#ECE9FF", Dark: "#2D2A4A"}
+	cSel     = adaptive{Light: "#D4CCFF", Dark: "#4B3F99"}
 )
+
+// paneFocused is false while the focus is in another pane.
+var paneFocused = true
 
 func fg(c color.Color) lipgloss.Style { return lipgloss.NewStyle().Foreground(c) }
 
@@ -118,6 +123,7 @@ func (m *model) listHeight() int {
 func (m *model) View() tea.View {
 	v := tea.NewView(m.render())
 	v.AltScreen = true
+	v.ReportFocus = true
 	return v
 }
 
@@ -307,12 +313,28 @@ func (m *model) renderList() []string {
 	return out
 }
 
-// selectable indents a row, and marks and shades it when selected.
-func selectable(line string, selected bool, width int) string {
+// sgrReset matches the resets lipgloss puts after each styled span.
+var sgrReset = regexp.MustCompile(`\x1b\[0?m`)
+
+// selectable indents a row; a selected row gets the office TUI's selection: a strong
+// background set again after each reset, so the row keeps its colours, and an accent bar.
+func selectable(line string, selected bool, w int) string {
+	line = "  " + line
 	if !selected {
-		return "  " + line
+		return line
 	}
-	return lipgloss.NewStyle().Background(cSelBg).Width(width).Render(sAccent.Render("▌ ") + line)
+	sel, mark := color.Color(cSel), color.Color(cAccent)
+	if !paneFocused {
+		sel, mark = cSelBg, cMuted
+	}
+	bg, _, _ := strings.Cut(lipgloss.NewStyle().Background(sel).Render("|"), "|")
+	rest := ansi.Cut(line, 1, w)
+	body := bg + sgrReset.ReplaceAllStringFunc(rest, func(r string) string { return r + bg })
+	if pad := w - 1 - lipgloss.Width(rest); pad > 0 {
+		body += strings.Repeat(" ", pad)
+	}
+	bar := lipgloss.NewStyle().Foreground(mark).Background(sel).Bold(true).Render("▌")
+	return bar + body + "\x1b[m"
 }
 
 func field(name, value string, width int) string {

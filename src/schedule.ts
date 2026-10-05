@@ -32,7 +32,28 @@ export function buildSchedule(rrules: string | string[], dtstart: string | undef
       throw new Error(`invalid rrule ${JSON.stringify(rrule)}: ${(error as Error).message}`);
     }
   });
-  return { rules, tz, text: rules.map((rule) => describe(rule, start)).join("; ") };
+  return { rules, tz, text: mergeTexts(rules.map((rule) => describe(rule, start))) };
+}
+
+const TIME_RE = /^(\d{1,2})(?::(\d{2}))? (AM|PM)$/;
+
+function minutesOfDay(time: string): number {
+  const m = TIME_RE.exec(time)!;
+  const hour = (Number(m[1]) % 12) + (m[3] === "PM" ? 12 : 0);
+  return hour * 60 + Number(m[2] ?? 0);
+}
+
+// Rules that differ only by their times read as one: "every day at 6:03 AM, 12:35 PM and 6:35 PM".
+export function mergeTexts(texts: string[]): string {
+  if (texts.length < 2) return texts.join("");
+  const parts = texts.map((text) => /^(.*) at (.+)$/.exec(text));
+  const prefix = parts[0]?.[1];
+  if (parts.some((p) => !p || p[1] !== prefix)) return texts.join("; ");
+  const times = parts.flatMap((p) => p![2]!.split(/, | and /));
+  if (!times.every((t) => TIME_RE.test(t))) return texts.join("; ");
+  const sorted = [...new Set(times)].sort((a, b) => minutesOfDay(a) - minutesOfDay(b));
+  const list = sorted.length === 1 ? sorted[0] : `${sorted.slice(0, -1).join(", ")} and ${sorted.at(-1)}`;
+  return `${prefix} at ${list}`;
 }
 
 function describe(rule: RRuleTemporal, start: Temporal.ZonedDateTime): string {
