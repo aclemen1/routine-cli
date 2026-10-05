@@ -4,6 +4,17 @@ import type { Paths } from "./paths.ts";
 
 export type RunStatus = "ok" | "failed" | "timeout" | "error";
 
+export interface StepRecord {
+  name: string;
+  status: RunStatus | "skipped";
+  started: string;
+  ended: string;
+  exitCode?: number;
+  error?: string;
+  sessionId?: string;
+  stopReason?: string;
+}
+
 export interface RunRecord {
   id: string;
   started: string;
@@ -16,6 +27,7 @@ export interface RunRecord {
   error?: string;
   sessionId?: string;
   stopReason?: string;
+  steps?: StepRecord[];
 }
 
 export interface TaskState {

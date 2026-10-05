@@ -17,6 +17,7 @@ import {
   type ClosePolicy,
   type FieldValues,
   type PermissionPolicy,
+  type Step,
   type Task,
   type TaskError,
 } from "./task.ts";
@@ -34,6 +35,8 @@ export interface RoutineInput {
   tz?: string | null;
   run?: string;
   acp?: { command: string; args?: string[]; meta?: Record<string, unknown> };
+  // As in the routine file: name, run or acp, close, permissions, timeout, cwd, continue_on_error.
+  steps?: Record<string, unknown>[];
   close?: ClosePolicy | null;
   permissions?: PermissionPolicy | null;
   meta?: Record<string, unknown> | null;
@@ -56,6 +59,7 @@ export interface Summary {
   cwd?: string;
   run?: string;
   acp?: AcpSpec;
+  steps?: Step[];
   meta?: Record<string, unknown>;
   next: string | null;
   lastScheduled?: string;
@@ -90,11 +94,13 @@ function toFieldValues(input: RoutineInput): FieldValues {
     if (value !== undefined) values[key] = value === null || value === "" ? null : value;
   }
   if (input.meta !== undefined) values.meta = input.meta === null || Object.keys(input.meta).length === 0 ? null : input.meta;
-  if (input.run !== undefined && input.acp !== undefined) throw new Error("give run or acp, not both");
+  const executors = [input.run, input.acp, input.steps].filter((v) => v !== undefined).length;
+  if (executors > 1) throw new Error("give one of run, acp or steps");
   if (input.run !== undefined) {
     if (!input.run.trim()) throw new Error("run cannot be empty");
     values.run = input.run;
     values.acp = null;
+    values.steps = null;
     if (input.close === undefined) values.close = null;
     if (input.permissions === undefined) values.permissions = null;
   }
@@ -104,6 +110,14 @@ function toFieldValues(input: RoutineInput): FieldValues {
     if (input.acp.meta !== undefined) acp.meta = input.acp.meta;
     values.acp = acp;
     values.run = null;
+    values.steps = null;
+  }
+  if (input.steps !== undefined) {
+    values.steps = input.steps;
+    values.run = null;
+    values.acp = null;
+    values.close = null;
+    values.permissions = null;
   }
   return values;
 }
@@ -139,6 +153,7 @@ export function summarize(ctx: Context, task: Task, nowMs = Date.now()): Summary
   if (task.cwd) summary.cwd = task.cwd;
   if (task.run) summary.run = task.run;
   if (task.acp) summary.acp = task.acp;
+  if (task.steps) summary.steps = task.steps;
   if (task.meta) summary.meta = task.meta;
   if (state?.lastScheduled) summary.lastScheduled = state.lastScheduled;
   if (state?.lastRun) summary.lastRun = state.lastRun;
@@ -149,7 +164,7 @@ export function addRoutine(ctx: Context, id: string, input: RoutineInput, paused
   const file = taskFile(ctx.paths.tasks, id);
   if (existsSync(file)) throw new Error(`routine ${JSON.stringify(id)} already exists`);
   if (!input.rrule?.length) throw new Error("a new routine needs rrule");
-  if (input.run === undefined && input.acp === undefined) throw new Error("a new routine needs run or acp");
+  if (input.run === undefined && input.acp === undefined && input.steps === undefined) throw new Error("a new routine needs run, acp or steps");
   const task = writeValidated(ctx, file, id, { ...toFieldValues(input), active: !paused }, input.body);
   const since = new Date().toISOString();
   writeState(ctx.paths, id, paused ? { since, inactiveSeen: true } : { since });

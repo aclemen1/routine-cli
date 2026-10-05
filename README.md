@@ -37,8 +37,9 @@ Text passed on stdin.
 | `acp` | ACP server to prompt: `command`, `args`, `meta` | `run` or `acp` |
 | `close` | ACP session close: `on-success`, `always`, `never` | `on-success` |
 | `permissions` | Answer to ACP permission requests: `reject`, `allow` | `reject` |
+| `steps` | Ordered steps, instead of `run` or `acp` (below) | none |
 | `cwd` | Working directory | home |
-| `timeout` | `30s`, `10m`, `1h30m` | config `timeout` |
+| `timeout` | `30s`, `10m`, `1h30m`; with `steps`, the budget of the whole run | config `timeout` |
 | `owner` | Free label for the program that manages the routine | none |
 | `meta` | Free mapping kept as is, returned by `ls` and `show`, ignored for scheduling | none |
 | `active` | `false` pauses the routine | `true` |
@@ -65,6 +66,40 @@ timeout: 20m
 
 Prepare today's briefing and send it to me.
 ```
+
+## Steps
+
+`steps` chains executors in one run, under one lock. Each step has a `name` and a `run` or an `acp` (with `close` and `permissions`), and may set `timeout`, `cwd` and `continue_on_error`.
+
+```markdown
+---
+rrule: FREQ=DAILY;BYHOUR=21;BYMINUTE=45
+timeout: 45m
+steps:
+  - name: coverage
+    run: go test -cover ./...
+    cwd: ~/code/aclemen1/office-cli
+    timeout: 20m
+  - name: improve
+    acp: { command: herdr-acp, args: [--workspace, routine] }
+    cwd: ~/code/aclemen1/office-cli
+---
+
+## improve
+
+Here is today's coverage:
+
+{{steps.coverage.output}}
+
+Propose the three most useful tests to add.
+```
+
+- A step's stdin (command) or prompt (acp) is the body section `## <step name>`. Other headings stay inside their section; text before the first step heading is ignored.
+- `{{run_dir}}` and `{{steps.<earlier step>.output}}` are replaced in that text. A command's output is its stdout and stderr; an acp step's output is the agent's text.
+- Each run has its own directory, `$ROUTINE_RUN_DIR` (`runs/<id>/<time>.d/`), shared by its steps; each step's output is kept there as `<name>.out`. `ROUTINE_STEP` names the current step.
+- Steps run in order. A failed step stops the run and the remaining steps are `skipped`, unless the step has `continue_on_error: true`.
+- The routine `timeout` bounds the whole run; a step `timeout` bounds its step.
+- The run log shows each step between `=== step <name> ===` lines; `routine log` and the journal give each step's status.
 
 ## Config
 

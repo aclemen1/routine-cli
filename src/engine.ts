@@ -117,8 +117,10 @@ function collectGarbage(paths: Paths, config: Config, nowMs: number): void {
   if (!existsSync(paths.runs)) return;
   const limit = nowMs - config.retentionDays * 86_400_000;
   for (const entry of readdirSync(paths.runs, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith(".log")) continue;
-    const file = join(entry.parentPath, entry.name);
-    if (statSync(file).mtimeMs < limit) rmSync(file, { force: true });
+    const isLog = entry.isFile() && entry.name.endsWith(".log");
+    const isRunDir = entry.isDirectory() && entry.name.endsWith(".d");
+    if (!isLog && !isRunDir) continue;
+    const path = join(entry.parentPath, entry.name);
+    if (existsSync(path) && statSync(path).mtimeMs < limit) rmSync(path, { recursive: true, force: true });
   }
 }

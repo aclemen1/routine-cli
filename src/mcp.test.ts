@@ -37,7 +37,7 @@ test("MCP tools create, list, edit and remove routines", async () => {
 
     r = await call("routine_add", { id: "x", rrule: ["FREQ=DAILY"] });
     assert.equal(r.error, true);
-    assert.match(r.data, /run or acp/);
+    assert.match(r.data, /run, acp or steps/);
 
     r = await call("routine_edit", { id: "office/perso-p-0014-brief", meta: { states: ["open", "waiting"] } });
     assert.deepEqual(r.data.meta, { states: ["open", "waiting"] });

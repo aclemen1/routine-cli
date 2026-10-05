@@ -38,6 +38,12 @@ const fields = {
   acp,
   close: z.enum(["on-success", "always", "never"]).describe("When to close the ACP session (default on-success)"),
   permissions: z.enum(["reject", "allow"]).describe("Answer to ACP permission requests (default reject)"),
+  steps: z
+    .array(z.record(z.string(), z.unknown()))
+    .describe(
+      "Ordered steps instead of run or acp. Each: name, run or acp (+ close, permissions), optional timeout, cwd, continue_on_error. " +
+        "A step's stdin or prompt is the body section '## <name>', where {{run_dir}} and {{steps.<earlier step>.output}} are replaced.",
+    ),
   cwd: z.string().describe("Working directory (default home)"),
   timeout: z.string().describe("Duration such as 30s, 10m, 1h30m"),
   owner: z.string().describe("Label of the program that manages the routine, e.g. office:perso/P-0014"),
@@ -89,7 +95,7 @@ export function createServer(ctx: Context): McpServer {
   server.registerTool(
     "routine_add",
     {
-      description: `Create a routine. It needs rrule and either run or acp. ${AGREEMENT}`,
+      description: `Create a routine. It needs rrule and one of run, acp or steps. ${AGREEMENT}`,
       inputSchema: {
         id,
         rrule: z.array(z.string()).min(1).describe("RRULE values without DTSTART, e.g. FREQ=DAILY;BYHOUR=7;BYMINUTE=0"),
@@ -103,12 +109,12 @@ export function createServer(ctx: Context): McpServer {
   server.registerTool(
     "routine_edit",
     {
-      description: `Change fields of a routine. null removes an optional field; run replaces acp and the reverse. ${AGREEMENT}`,
+      description: `Change fields of a routine. null removes an optional field; run, acp and steps replace one another. ${AGREEMENT}`,
       inputSchema: {
         id,
         rrule: z.array(z.string()).min(1).optional().describe("Replaces every rule"),
         ...Object.fromEntries(
-          Object.entries(fields).map(([k, v]) => [k, k === "run" || k === "acp" || k === "body" ? v.optional() : v.nullable().optional()]),
+          Object.entries(fields).map(([k, v]) => [k, k === "run" || k === "acp" || k === "steps" || k === "body" ? v.optional() : v.nullable().optional()]),
         ),
       },
       annotations: { destructiveHint: false, openWorldHint: false },

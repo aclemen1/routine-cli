@@ -17,6 +17,7 @@ export interface Task {
   cwd?: string;
   run?: string;
   acp?: AcpSpec;
+  steps?: Step[];
   meta?: Record<string, unknown>;
   body: string;
   schedule: Schedule;
@@ -58,13 +59,105 @@ function parseAcp(value: unknown, close: unknown, permissions: unknown): AcpSpec
   return spec;
 }
 
+export interface Step {
+  name: string;
+  run?: string;
+  acp?: AcpSpec;
+  timeoutMs?: number;
+  cwd?: string;
+  continueOnError: boolean;
+  // Text of the body section `## <name>`: stdin of a command, prompt of an acp step.
+  input: string;
+}
+
+const STEP_KEYS = new Set(["name", "run", "acp", "close", "permissions", "timeout", "cwd", "continue_on_error"]);
+const STEP_NAME_RE = /^[a-z0-9][a-z0-9_-]*$/;
+const TEMPLATE_RE = /\{\{\s*([^}]*?)\s*\}\}/g;
+
+// Splits the body on `## <step name>` headings; other headings stay in their section.
+export function bodySections(body: string, names: string[]): Map<string, string> {
+  const sections = new Map<string, string>();
+  const known = new Set(names);
+  let current: string | undefined;
+  let lines: string[] = [];
+  const flush = () => {
+    if (current !== undefined) sections.set(current, lines.join("\n").trim());
+  };
+  for (const line of body.split(/\r?\n/)) {
+    const heading = /^##\s+(\S+)\s*$/.exec(line);
+    if (heading && known.has(heading[1]!)) {
+      flush();
+      current = heading[1]!;
+      if (sections.has(current)) throw new Error(`section "## ${current}" appears twice`);
+      lines = [];
+    } else lines.push(line);
+  }
+  flush();
+  return sections;
+}
+
+function parseSteps(value: unknown, body: string): Step[] {
+  if (!Array.isArray(value) || value.length === 0) throw new Error("steps must be a non-empty list");
+  const names: string[] = [];
+  const steps = value.map((raw, index) => {
+    const where = `steps[${index}]`;
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new Error(`${where} must be a mapping`);
+    const step = raw as Record<string, unknown>;
+    for (const key of Object.keys(step)) {
+      if (!STEP_KEYS.has(key)) throw new Error(`unknown field ${where}.${key}`);
+    }
+    const name = step.name;
+    if (typeof name !== "string" || !STEP_NAME_RE.test(name)) {
+      throw new Error(`${where}.name must be lowercase letters, digits, '_' or '-'`);
+    }
+    if (names.includes(name)) throw new Error(`step ${JSON.stringify(name)} appears twice`);
+    names.push(name);
+    const run = step.run;
+    if (run !== undefined && (typeof run !== "string" || !run.trim())) throw new Error(`step ${name}: run must be a non-empty string`);
+    if (run !== undefined && step.acp !== undefined) throw new Error(`step ${name}: give run or acp, not both`);
+    if (run === undefined && step.acp === undefined) throw new Error(`step ${name}: missing run or acp`);
+    if (step.acp === undefined && (step.close !== undefined || step.permissions !== undefined)) {
+      throw new Error(`step ${name}: close and permissions apply only to acp steps`);
+    }
+    if (step.continue_on_error !== undefined && typeof step.continue_on_error !== "boolean") {
+      throw new Error(`step ${name}: continue_on_error must be true or false`);
+    }
+    if (step.cwd !== undefined && typeof step.cwd !== "string") throw new Error(`step ${name}: cwd must be a string`);
+    const result: Step = { name, continueOnError: step.continue_on_error === true, input: "" };
+    if (run !== undefined) result.run = run as string;
+    if (step.acp !== undefined) {
+      try {
+        result.acp = parseAcp(step.acp, step.close, step.permissions);
+      } catch (error) {
+        throw new Error(`step ${name}: ${(error as Error).message}`);
+      }
+    }
+    if (step.timeout !== undefined) result.timeoutMs = parseDuration(step.timeout as string | number);
+    if (step.cwd !== undefined) result.cwd = step.cwd as string;
+    return result;
+  });
+  const sections = bodySections(body, names);
+  steps.forEach((step, index) => {
+    step.input = sections.get(step.name) ?? "";
+    if (step.acp && !step.input) throw new Error(`step ${step.name}: an acp step needs its prompt in a "## ${step.name}" section`);
+    for (const [, ref] of step.input.matchAll(TEMPLATE_RE)) {
+      if (ref === "run_dir") continue;
+      const match = /^steps\.([a-z0-9_-]+)\.output$/.exec(ref!);
+      if (!match || !names.slice(0, index).includes(match[1]!)) {
+        throw new Error(`step ${step.name}: unknown template {{${ref}}} (use {{run_dir}} or {{steps.<earlier step>.output}})`);
+      }
+    }
+  });
+  return steps;
+}
+
 export interface TaskError {
   id: string;
   file: string;
   error: string;
 }
 
-export const FIELDS = ["rrule", "dtstart", "tz", "run", "acp", "close", "permissions", "cwd", "timeout", "owner", "meta", "active"] as const;
+export const FIELDS = ["rrule", "dtstart", "tz", "run", "acp", "close", "permissions", "steps", "cwd", "timeout", "owner", "meta", "active"] as const;
 export type Field = (typeof FIELDS)[number];
 const FIELD_SET = new Set<string>(FIELDS);
 const ID_RE = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/;
@@ -111,8 +204,12 @@ export function parseTask(id: string, file: string, text: string, config: Config
     throw new Error("rrule must be a string or a list of strings");
   }
   const run = str("run");
+  if (fm.steps !== undefined && (run !== undefined || fm.acp !== undefined || fm.close !== undefined || fm.permissions !== undefined)) {
+    throw new Error("give steps, or run or acp, not both");
+  }
+  const steps = fm.steps === undefined ? undefined : parseSteps(fm.steps, body);
   if (run !== undefined && fm.acp !== undefined) throw new Error("give run or acp, not both");
-  if (!run && fm.acp === undefined) throw new Error("missing run or acp");
+  if (!steps && !run && fm.acp === undefined) throw new Error("missing run, acp or steps");
   if (fm.acp === undefined && (fm.close !== undefined || fm.permissions !== undefined)) {
     throw new Error("close and permissions apply only to acp routines");
   }
@@ -137,6 +234,7 @@ export function parseTask(id: string, file: string, text: string, config: Config
   };
   if (run) task.run = run;
   if (acp) task.acp = acp;
+  if (steps) task.steps = steps;
   if (fm.meta) task.meta = fm.meta as Record<string, unknown>;
   if (dtstart !== undefined) task.dtstart = dtstart;
   const owner = str("owner");
@@ -176,7 +274,7 @@ export function loadTasks(tasksDir: string, config: Config): { tasks: Task[]; er
   return { tasks, errors };
 }
 
-export type FieldValues = Partial<Record<Field, string | string[] | boolean | Record<string, unknown> | null>>;
+export type FieldValues = Partial<Record<Field, unknown>>;
 
 // Sets fields in place (null removes one), keeping comments and the order of existing keys.
 export function writeTaskFile(file: string, values: FieldValues, body: string | undefined): void {

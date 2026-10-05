@@ -1,13 +1,13 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
 import type { Config } from "./config.ts";
 import { expandHome, type Paths } from "./paths.ts";
-import type { RunRecord, RunStatus } from "./state.ts";
-import type { AcpSpec, Task } from "./task.ts";
+import type { RunRecord, RunStatus, StepRecord } from "./state.ts";
+import type { AcpSpec, Step, Task } from "./task.ts";
 
 const KILL_GRACE_MS = 10_000;
 
@@ -16,15 +16,16 @@ export interface RunOptions {
   manual?: boolean;
 }
 
-interface RunContext {
-  task: Task;
+// One executor call: a single-executor routine, or one step.
+interface Unit {
   config: Config;
-  options: RunOptions;
-  started: Date;
-  log: string;
+  input: string;
+  timeoutMs: number;
   out: number;
   cwd: string;
   env: NodeJS.ProcessEnv;
+  // Receives the agent's text of an acp unit.
+  capture?: (text: string) => void;
 }
 
 interface Outcome {
@@ -53,32 +54,32 @@ function exited(child: ChildProcess): Promise<void> {
   return new Promise((resolve) => child.once("close", () => resolve()));
 }
 
-// Runs a routine with its executor; output goes to a per-run log file.
+// Runs a routine with its executor or its steps; output goes to a per-run log file.
 export async function runTask(task: Task, config: Config, paths: Paths, options: RunOptions = {}): Promise<RunRecord> {
   const started = new Date();
   const logDir = join(paths.runs, task.id);
   mkdirSync(logDir, { recursive: true });
   const log = join(logDir, `${stamp(started)}.log`);
   const out = openSync(log, "a");
-  const context: RunContext = {
-    task,
-    config,
-    options,
-    started,
-    log,
-    out,
-    cwd: task.cwd ? expandHome(task.cwd) : homedir(),
-    env: {
-      ...process.env,
-      ...config.env,
-      ROUTINE_ID: task.id,
-      ROUTINE_LOG: log,
-      ...(options.scheduled ? { ROUTINE_SCHEDULED: options.scheduled } : {}),
-    },
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...config.env,
+    ROUTINE_ID: task.id,
+    ROUTINE_LOG: log,
+    ...(options.scheduled ? { ROUTINE_SCHEDULED: options.scheduled } : {}),
   };
+  const cwd = task.cwd ? expandHome(task.cwd) : homedir();
   let outcome: Outcome;
+  let steps: StepRecord[] | undefined;
   try {
-    outcome = task.acp ? await runAcp(context, task.acp) : await runCommand(context, task.run!);
+    if (task.steps) {
+      const runDir = join(logDir, `${stamp(started)}.d`);
+      mkdirSync(runDir, { recursive: true });
+      ({ outcome, steps } = await runSteps(task, task.steps, { config, out, cwd, env: { ...env, ROUTINE_RUN_DIR: runDir }, runDir, started }));
+    } else {
+      const unit: Unit = { config, input: task.body, timeoutMs: task.timeoutMs, out, cwd, env };
+      outcome = task.acp ? await runAcp(unit, task.acp) : await runCommand(unit, task.run!);
+    }
   } finally {
     closeSync(out);
   }
@@ -95,11 +96,93 @@ export async function runTask(task: Task, config: Config, paths: Paths, options:
   if (outcome.error) record.error = outcome.error;
   if (outcome.sessionId) record.sessionId = outcome.sessionId;
   if (outcome.stopReason) record.stopReason = outcome.stopReason;
+  if (steps) record.steps = steps;
   return record;
 }
 
+interface StepsContext {
+  config: Config;
+  out: number;
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  runDir: string;
+  started: Date;
+}
+
+function expandTemplates(text: string, runDir: string, outputs: Map<string, string>): string {
+  return text.replace(/\{\{\s*([^}]*?)\s*\}\}/g, (_, ref: string) => {
+    if (ref === "run_dir") return runDir;
+    const name = /^steps\.([a-z0-9_-]+)\.output$/.exec(ref)?.[1];
+    return name !== undefined ? (outputs.get(name) ?? "") : `{{${ref}}}`;
+  });
+}
+
+// Runs the steps in order within the routine's timeout. A failed step stops the rest unless it has continue_on_error.
+async function runSteps(task: Task, steps: Step[], ctx: StepsContext): Promise<{ outcome: Outcome; steps: StepRecord[] }> {
+  const deadline = ctx.started.getTime() + task.timeoutMs;
+  const outputs = new Map<string, string>();
+  const records: StepRecord[] = [];
+  let failure: { record: StepRecord; outcome: Outcome } | undefined;
+  for (const step of steps) {
+    const stepStarted = new Date();
+    if (failure) {
+      records.push({ name: step.name, status: "skipped", started: stepStarted.toISOString(), ended: stepStarted.toISOString() });
+      continue;
+    }
+    writeSync(ctx.out, `${records.length ? "\n" : ""}=== step ${step.name} ===\n`);
+    const remaining = deadline - stepStarted.getTime();
+    const outputFile = join(ctx.runDir, `${step.name}.out`);
+    let outcome: Outcome;
+    if (remaining <= 0) {
+      outcome = { status: "timeout", exitCode: null, error: "routine timeout reached before this step" };
+    } else {
+      const unit: Unit = {
+        config: ctx.config,
+        input: expandTemplates(step.input, ctx.runDir, outputs),
+        timeoutMs: Math.min(step.timeoutMs ?? remaining, remaining),
+        out: ctx.out,
+        cwd: step.cwd ? expandHome(step.cwd) : ctx.cwd,
+        env: { ...ctx.env, ROUTINE_STEP: step.name },
+      };
+      if (step.acp) {
+        let text = "";
+        unit.capture = (chunk) => {
+          text += chunk;
+        };
+        outcome = await runAcp(unit, step.acp);
+        writeFileSync(outputFile, text);
+      } else {
+        const fd = openSync(outputFile, "w");
+        try {
+          outcome = await runCommand({ ...unit, out: fd }, step.run!);
+        } finally {
+          closeSync(fd);
+        }
+        writeSync(ctx.out, readFileSync(outputFile));
+      }
+    }
+    outputs.set(step.name, readFileSync(outputFile, { encoding: "utf8", flag: "a+" }));
+    const record: StepRecord = {
+      name: step.name,
+      status: outcome.status,
+      started: stepStarted.toISOString(),
+      ended: new Date().toISOString(),
+    };
+    if (outcome.exitCode !== null) record.exitCode = outcome.exitCode;
+    if (outcome.error) record.error = outcome.error;
+    if (outcome.stopReason) record.stopReason = outcome.stopReason;
+    if (outcome.sessionId) record.sessionId = outcome.sessionId;
+    writeSync(ctx.out, `=== step ${step.name}: ${outcome.status}${outcome.status !== "ok" && step.continueOnError ? " (continue_on_error)" : ""} ===\n`);
+    records.push(record);
+    if (outcome.status !== "ok" && !step.continueOnError) failure = { record, outcome };
+  }
+  if (!failure) return { outcome: { status: "ok", exitCode: null }, steps: records };
+  const outcome: Outcome = { status: failure.outcome.status, exitCode: null, error: `step ${failure.record.name}${failure.outcome.error ? `: ${failure.outcome.error}` : ""}` };
+  return { outcome, steps: records };
+}
+
 // The command runs in its own process group, so a timeout kills its children too.
-async function runCommand(context: RunContext, run: string): Promise<Outcome> {
+async function runCommand(context: Unit, run: string): Promise<Outcome> {
   const [shell, ...shellArgs] = context.config.shell;
   let timedOut = false;
   let spawnError: string | undefined;
@@ -115,9 +198,9 @@ async function runCommand(context: RunContext, run: string): Promise<Outcome> {
       timedOut = true;
       killGroup(child.pid, "SIGTERM");
       killTimer = setTimeout(() => killGroup(child.pid, "SIGKILL"), KILL_GRACE_MS);
-    }, context.task.timeoutMs);
+    }, context.timeoutMs);
     child.stdin?.on("error", () => {});
-    child.stdin?.end(context.task.body);
+    child.stdin?.end(context.input);
     child.on("error", (error) => {
       spawnError = error.message;
       clearTimeout(timer);
@@ -146,7 +229,7 @@ function choosePermission(params: acp.RequestPermissionRequest, policy: AcpSpec[
 }
 
 // Starts the ACP server, opens a session, sends the body as the prompt and waits for the end of the turn.
-async function runAcp(context: RunContext, spec: AcpSpec): Promise<Outcome> {
+async function runAcp(context: Unit, spec: AcpSpec): Promise<Outcome> {
   const write = (text: string) => writeSync(context.out, text);
   const child = spawn(expandHome(spec.command), spec.args.map(expandHome), {
     cwd: context.cwd,
@@ -178,6 +261,7 @@ async function runAcp(context: RunContext, spec: AcpSpec): Promise<Outcome> {
       const update = params.update;
       if (update.sessionUpdate === "agent_message_chunk" && update.content.type === "text") {
         write(update.content.text);
+        context.capture?.(update.content.text);
         lastWasText = true;
       } else if (update.sessionUpdate === "tool_call") {
         write(`${lastWasText ? "\n" : ""}[tool] ${update.title}\n`);
@@ -198,10 +282,10 @@ async function runAcp(context: RunContext, spec: AcpSpec): Promise<Outcome> {
         write("\n[acp] timeout: session/cancel\n");
         void ctx.notify("session/cancel", { sessionId: sessionId! }).catch(() => {});
         killTimer = setTimeout(() => killGroup(child.pid, "SIGTERM"), KILL_GRACE_MS);
-      }, context.task.timeoutMs);
+      }, context.timeoutMs);
       let response: acp.PromptResponse;
       try {
-        response = await ctx.request("session/prompt", { sessionId, prompt: [{ type: "text", text: context.task.body }] });
+        response = await ctx.request("session/prompt", { sessionId, prompt: [{ type: "text", text: context.input }] });
       } finally {
         clearTimeout(timer);
         clearTimeout(killTimer);

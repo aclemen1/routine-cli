@@ -28,7 +28,7 @@ import { checkId, readTask, type ClosePolicy, type PermissionPolicy } from "./ta
 const USAGE = `routine — run scheduled routines described by Markdown files
 
 Usage:
-  routine add <id> --rrule <RRULE> (--run <command> | --acp-command <cmd>) [options]
+  routine add <id> --rrule <RRULE> (--run <command> | --acp-command <cmd> | --steps <json>) [options]
   routine edit <id> [options]            change fields; an empty value removes an optional one
   routine pause <id> | resume <id>
   routine rm <id>
@@ -49,6 +49,8 @@ Options for add and edit:
   --acp-command <cmd>    ACP server to start; the body is the prompt
   --acp-arg <arg>        argument of the ACP server (repeatable; --acp-arg=--flag for a dash)
   --acp-meta <json>      _meta object passed in session/new
+  --steps <json>         ordered steps, e.g. '[{"name":"measure","run":"…"},{"name":"analyse","acp":{"command":"…"}}]';
+                         each step's text is the body section "## <name>"
   --close <policy>       ACP session close: on-success (default), always, never
   --permissions <p>      answer to ACP permission requests: reject (default), allow
   --owner <owner>        e.g. office:perso/P-0014
@@ -75,6 +77,7 @@ const FIELD_OPTIONS = {
   "acp-arg": { type: "string", multiple: true },
   "acp-meta": { type: "string" },
   meta: { type: "string" },
+  steps: { type: "string" },
   close: { type: "string" },
   permissions: { type: "string" },
   owner: { type: "string" },
@@ -152,6 +155,17 @@ function routineInput(flags: FieldFlags, current?: RoutineInput["acp"]): Routine
     } else if (current?.meta) acp.meta = current.meta;
     input.acp = acp;
   }
+  const steps = str("steps");
+  if (steps !== undefined) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(steps);
+    } catch {
+      throw new UsageError("--steps expects a JSON list");
+    }
+    if (!Array.isArray(parsed)) throw new UsageError("--steps expects a JSON list");
+    input.steps = parsed as Record<string, unknown>[];
+  }
   const meta = str("meta");
   if (meta !== undefined) {
     if (meta === "") input.meta = null;
@@ -189,7 +203,8 @@ function runLine(record: RunRecord, tz: string): string {
   const kind = record.manual ? "manual" : `scheduled ${local(record.scheduled, tz)}`;
   const code = record.exitCode === null ? "" : ` exit ${record.exitCode}`;
   const stop = record.stopReason ? ` (${record.stopReason})` : "";
-  return `${local(record.started, tz)}  ${record.id}  ${record.status}${code}${stop}  ${duration}  ${kind}${record.error ? `  (${record.error})` : ""}\n  ${record.log}`;
+  const steps = record.steps ? `\n  steps: ${record.steps.map((s) => `${s.name} ${s.status}`).join(", ")}` : "";
+  return `${local(record.started, tz)}  ${record.id}  ${record.status}${code}${stop}  ${duration}  ${kind}${record.error ? `  (${record.error})` : ""}${steps}\n  ${record.log}`;
 }
 
 function statusText(status: EngineStatus): string {
@@ -217,8 +232,8 @@ async function main(argv: string[]): Promise<number> {
       const { values, positionals } = parse(args, { ...FIELD_OPTIONS, paused: { type: "boolean" } });
       const id = oneId(positionals);
       const input = routineInput(values);
-      if (!input.rrule || (input.run === undefined && input.acp === undefined)) {
-        throw new UsageError("add needs --rrule and --run or --acp-command");
+      if (!input.rrule || (input.run === undefined && input.acp === undefined && input.steps === undefined)) {
+        throw new UsageError("add needs --rrule and one of --run, --acp-command or --steps");
       }
       const summary = addRoutine(ctx, id, input, values.paused ?? false);
       print(values.json, summary, () => `added ${id} (${summary.file})`);
@@ -280,6 +295,11 @@ async function main(argv: string[]): Promise<number> {
           lines.push(`acp:       ${[detail.acp.command, ...detail.acp.args].join(" ")}`);
           if (detail.acp.meta) lines.push(`acp meta:  ${JSON.stringify(detail.acp.meta)}`);
           lines.push(`close:     ${detail.acp.close}`, `perms:     ${detail.acp.permissions}`);
+        }
+        for (const step of detail.steps ?? []) {
+          const what = step.run ? `run ${step.run}` : `acp ${[step.acp!.command, ...step.acp!.args].join(" ")} (close ${step.acp!.close}, permissions ${step.acp!.permissions})`;
+          const extra = [step.timeoutMs ? `timeout ${formatDuration(step.timeoutMs)}` : "", step.cwd ? `cwd ${step.cwd}` : "", step.continueOnError ? "continue_on_error" : ""].filter(Boolean);
+          lines.push(`step:      ${step.name}: ${what}${extra.length ? ` [${extra.join(", ")}]` : ""}`);
         }
         lines.push(`timeout:   ${detail.timeout}`);
         if (detail.cwd) lines.push(`cwd:       ${detail.cwd}`);
