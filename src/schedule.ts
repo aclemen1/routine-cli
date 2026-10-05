@@ -1,4 +1,5 @@
 import { RRuleTemporal } from "rrule-temporal";
+import { toText } from "rrule-temporal/totext";
 import { Temporal } from "temporal-polyfill";
 
 export const DEFAULT_DTSTART = "2026-01-01T00:00";
@@ -7,6 +8,8 @@ export const DEFAULT_DTSTART = "2026-01-01T00:00";
 export interface Schedule {
   rules: RRuleTemporal[];
   tz: string;
+  // The rules in plain English, e.g. "every day at 6:03 AM; every day at 12:35 PM and 6:35 PM".
+  text: string;
 }
 
 export function buildSchedule(rrules: string | string[], dtstart: string | undefined, tz: string): Schedule {
@@ -29,7 +32,12 @@ export function buildSchedule(rrules: string | string[], dtstart: string | undef
       throw new Error(`invalid rrule ${JSON.stringify(rrule)}: ${(error as Error).message}`);
     }
   });
-  return { rules, tz };
+  return { rules, tz, text: rules.map((rule) => describe(rule, start)).join("; ") };
+}
+
+function describe(rule: RRuleTemporal, start: Temporal.ZonedDateTime): string {
+  if (rule.options().count === 1) return `once, on ${start.toPlainDateTime().toString({ smallestUnit: "minute" }).replace("T", " ")}`;
+  return toText(rule, "en", { excludeTzAbbreviation: true });
 }
 
 function zoned(ms: number, tz: string) {

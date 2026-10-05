@@ -269,11 +269,11 @@ async function main(argv: string[]): Promise<number> {
       noPositional("ls", positionals);
       const result = listRoutines(ctx, values.owner);
       print(values.json, result, () => {
-        const rows = [["ID", "STATE", "NEXT", "LAST RUN", "META", "RRULE"]];
+        const rows = [["ID", "STATE", "NEXT", "LAST RUN", "RECURRENCE", "META"]];
         for (const s of result.routines) {
           const state = s.running ? "running" : s.active ? "active" : "paused";
           const last = s.lastRun ? `${local(s.lastRun.started, tz)} ${s.lastRun.status}` : "-";
-          rows.push([s.id, state, local(s.next, tz), last, s.meta ? JSON.stringify(s.meta) : "-", s.rrules.join(" | ")]);
+          rows.push([s.id, state, local(s.next, tz), last, s.recurrence, s.meta ? JSON.stringify(s.meta) : "-"]);
         }
         const lines = result.routines.length ? [table(rows)] : ["no routine"];
         for (const e of result.errors) lines.push(`invalid ${e.id}: ${e.error}`);
@@ -289,6 +289,7 @@ async function main(argv: string[]): Promise<number> {
           `id:        ${detail.id}`,
           `file:      ${detail.file}`,
           `state:     ${detail.running ? "running" : detail.active ? "active" : "paused"}`,
+          `when:      ${detail.recurrence}`,
           ...detail.rrules.map((r) => `rrule:     ${r}`),
           `dtstart:   ${detail.dtstart ?? "(default)"}`,
           `tz:        ${detail.tz}`,

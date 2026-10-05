@@ -237,8 +237,28 @@ func (m *model) renderList() []string {
 	if idW < 8 {
 		idW = 8
 	}
-	ownerW := m.width - idW - stateW - nextW - lastW - 10
+	rest := m.width - idW - stateW - nextW - lastW - 12
+	recW, ownerW := rest, 0
+	if rest > 40 {
+		ownerW = rest * 2 / 5
+		if ownerW > 22 {
+			ownerW = 22
+		}
+		recW = rest - ownerW - 2
+	}
+	longest := len("RECURRENCE")
+	for _, r := range rows {
+		if r.r != nil && len([]rune(r.r.Recurrence)) > longest {
+			longest = len([]rune(r.r.Recurrence))
+		}
+	}
+	if recW > longest {
+		recW = longest
+	}
 	head := "  " + pad("ID", idW) + "  " + pad("STATE", stateW) + "  " + pad("NEXT", nextW) + "  " + pad("LAST RUN", lastW)
+	if recW > 5 {
+		head += "  " + pad("RECURRENCE", recW)
+	}
 	if ownerW > 5 {
 		head += "  OWNER"
 	}
@@ -275,6 +295,9 @@ func (m *model) renderList() []string {
 			}
 			line = sText.Render(pad(rt.ID, idW)) + "  " + st.Render(pad(state, stateW)) + "  " +
 				sText.Render(pad(next, nextW)) + "  " + lst.Render(pad(last, lastW))
+			if recW > 5 {
+				line += "  " + sText.Render(pad(rt.Recurrence, recW))
+			}
 			if ownerW > 5 {
 				line += "  " + sMuted.Render(trunc(rt.Owner, ownerW))
 			}
@@ -310,6 +333,7 @@ func (m *model) renderDetail() []string {
 		state = "paused"
 	}
 	lines := []string{sAccent.Render(r.ID) + "  " + statusStyle(map[string]string{"active": "ok", "running": "running", "paused": "skipped"}[state]).Render(state), ""}
+	lines = append(lines, field("when", r.Recurrence, w))
 	for _, rule := range r.Rrules {
 		lines = append(lines, field("rrule", rule, w))
 	}

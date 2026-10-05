@@ -63,6 +63,7 @@ type routine struct {
 	Active        bool           `json:"active"`
 	Running       bool           `json:"running"`
 	Rrules        []string       `json:"rrules"`
+	Recurrence    string         `json:"recurrence"`
 	Dtstart       string         `json:"dtstart,omitempty"`
 	Tz            string         `json:"tz"`
 	Timeout       string         `json:"timeout"`

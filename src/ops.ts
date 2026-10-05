@@ -53,6 +53,7 @@ export interface Summary {
   active: boolean;
   running: boolean;
   rrules: string[];
+  recurrence: string;
   dtstart?: string;
   tz: string;
   timeout: string;
@@ -144,6 +145,7 @@ export function summarize(ctx: Context, task: Task, nowMs = Date.now()): Summary
     active: task.active,
     running: lockHolder(ctx.paths, task.id) !== null,
     rrules: task.rrules,
+    recurrence: task.schedule.text,
     tz: task.tz,
     timeout: formatDuration(task.timeoutMs),
     next: next === undefined ? null : new Date(next).toISOString(),

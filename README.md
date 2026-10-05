@@ -46,6 +46,8 @@ Text passed on stdin.
 
 A one-shot routine is `FREQ=DAILY;COUNT=1` with `dtstart` set to its time.
 
+`ls`, `show`, the TUI and the JSON (`recurrence`) describe the rules in plain English, e.g. "every day at 6:03 AM; every day at 12:35 PM and 6:35 PM".
+
 The command runs in `shell` (default `/bin/zsh -lc`, so the login profile is read) with `ROUTINE_ID`, `ROUTINE_SCHEDULED` (the occurrence, UTC) and `ROUTINE_LOG` in its environment.
 
 ## ACP routines
@@ -142,7 +144,7 @@ Every command takes `--json`. Exit codes: 0 success, 1 failure, 2 usage error.
 
 ## TUI
 
-`routine tui` lists routines with their state, next occurrence, last run and owner; `enter` opens a routine (rules, next occurrences, executor or steps, meta, body, recent runs with each step's status) and a run's log, followed live. Keys: `R` run now, `p`/`u` pause/resume, `e` edit the file in `$EDITOR` then check it, `l` last log, `o` go to the run's ACP session (herdr tab, from herdr-acp's pane records), `D` delete, `/` filter, `X` kill switch, `?` keys, `q` quit. It reads and changes everything through `routine … --json`.
+`routine tui` lists routines with their state, next occurrence, last run, recurrence in plain English and owner; `enter` opens a routine (rules, next occurrences, executor or steps, meta, body, recent runs with each step's status) and a run's log, followed live. Keys: `R` run now, `p`/`u` pause/resume, `e` edit the file in `$EDITOR` then check it, `l` last log, `o` go to the run's ACP session (herdr tab, from herdr-acp's pane records), `D` delete, `/` filter, `X` kill switch, `?` keys, `q` quit. It reads and changes everything through `routine … --json`.
 
 Built with Go and Bubble Tea: `npm run build:tui`.
 
