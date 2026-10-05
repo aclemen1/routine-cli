@@ -134,10 +134,17 @@ routine log [<id>] [-n <count>]
 routine check
 routine tick [--foreground]
 routine stop | start | status
+routine tui                            # terminal interface
 routine mcp                            # MCP server on stdio
 ```
 
 Every command takes `--json`. Exit codes: 0 success, 1 failure, 2 usage error.
+
+## TUI
+
+`routine tui` lists routines with their state, next occurrence, last run and owner; `enter` opens a routine (rules, next occurrences, executor or steps, meta, body, recent runs with each step's status) and a run's log, followed live. Keys: `R` run now, `p`/`u` pause/resume, `e` edit the file in `$EDITOR` then check it, `l` last log, `o` go to the run's ACP session (herdr tab, from herdr-acp's pane records), `D` delete, `/` filter, `X` kill switch, `?` keys, `q` quit. It reads and changes everything through `routine … --json`.
+
+Built with Go and Bubble Tea: `npm run build:tui`.
 
 ## MCP
 
@@ -150,7 +157,7 @@ claude mcp add --scope user routine -- node ~/code/aclemen1/routine-cli/dist/cli
 ## Install
 
 ```sh
-npm install && npm run build
+npm install && npm run build && npm run build:tui
 app/scripts/build-app.sh --install     # add --notarize for a notarized build
 ```
 

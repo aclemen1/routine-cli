@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import { loadConfig } from "./config.ts";
 import { formatDuration } from "./duration.ts";
@@ -39,6 +41,7 @@ Usage:
   routine check                          validate every routine file
   routine tick [--foreground]            run what is due (called every minute)
   routine stop | start | status          global kill switch
+  routine tui                            terminal interface
   routine mcp                            serve these operations over MCP (stdio)
 
 Options for add and edit:
@@ -361,6 +364,18 @@ async function main(argv: string[]): Promise<number> {
       const status = command === "status" ? engineStatus(ctx) : setStopped(ctx, command === "stop");
       print(values.json, status, () => statusText(status));
       return 0;
+    }
+    case "tui": {
+      const { positionals } = parse(args, {});
+      noPositional("tui", positionals);
+      const binary = join(import.meta.dirname, "..", "tui", "routine-tui");
+      if (!existsSync(binary)) throw new Error(`${binary} not found: run npm run build:tui`);
+      const result = spawnSync(binary, [], {
+        stdio: "inherit",
+        env: { ...process.env, ROUTINE_CLI: JSON.stringify([process.execPath, process.argv[1]!]) },
+      });
+      if (result.error) throw result.error;
+      return result.status ?? 1;
     }
     case "mcp": {
       const { positionals } = parse(args, {});
