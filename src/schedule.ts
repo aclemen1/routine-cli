@@ -32,7 +32,11 @@ export function buildSchedule(rrules: string | string[], dtstart: string | undef
       throw new Error(`invalid rrule ${JSON.stringify(rrule)}: ${(error as Error).message}`);
     }
   });
-  return { rules, tz, text: mergeTexts(rules.map((rule) => describe(rule, start))) };
+  const text = mergeTexts(rules.map((rule) => describe(rule, start)))
+    .split("; ")
+    .map(compressTimes)
+    .join("; ");
+  return { rules, tz, text };
 }
 
 const TIME_RE = /^(\d{1,2})(?::(\d{2}))? (AM|PM)$/;
@@ -58,7 +62,31 @@ export function mergeTexts(texts: string[]): string {
 
 function describe(rule: RRuleTemporal, start: Temporal.ZonedDateTime): string {
   if (rule.options().count === 1) return `once, on ${start.toPlainDateTime().toString({ smallestUnit: "minute" }).replace("T", " ")}`;
-  return toText(rule, "en", { excludeTzAbbreviation: true });
+  return toText(rule, "en", { excludeTzAbbreviation: true })
+    .replace(/^every day on Monday, Tuesday, Wednesday, Thursday, Friday, Saturday and Sunday\b/, "every day")
+    .replace(/ on Monday, Tuesday, Wednesday, Thursday, Friday, Saturday and Sunday\b/, "")
+    .replace(/\bon Monday, Tuesday, Wednesday, Thursday and Friday\b/, "on weekdays")
+    .replace(/\bon Saturday and Sunday\b/, "on weekends");
+}
+
+function formatTime(minutes: number): string {
+  const hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h12}${minute ? `:${String(minute).padStart(2, "0")}` : ""} ${hour < 12 ? "AM" : "PM"}`;
+}
+
+// Three or more evenly spaced times read as a range: "every hour from 7:05 AM to 7:05 PM on weekdays".
+export function compressTimes(text: string): string {
+  const match = /^every (?:day|hour)( on .+?)? at (.+)$/.exec(text);
+  if (!match) return text;
+  const times = match[2]!.split(/, | and /);
+  if (times.length < 3 || !times.every((t) => TIME_RE.test(t))) return text;
+  const minutes = times.map(minutesOfDay).sort((a, b) => a - b);
+  const step = minutes[1]! - minutes[0]!;
+  if (step <= 0 || minutes.some((m, i) => i > 0 && m - minutes[i - 1]! !== step)) return text;
+  const every = step === 60 ? "every hour" : step % 60 === 0 ? `every ${step / 60} hours` : `every ${step} minutes`;
+  return `${every} from ${formatTime(minutes[0]!)} to ${formatTime(minutes.at(-1)!)}${match[1] ?? ""}`;
 }
 
 function zoned(ms: number, tz: string) {

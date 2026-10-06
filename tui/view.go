@@ -201,7 +201,7 @@ func (m *model) footer() []string {
 	var keys string
 	switch m.screen {
 	case listScreen:
-		keys = "enter detail · l last log · R run · p pause · u resume · e edit · o session · D delete · / filter · X kill switch · ? keys · q quit"
+		keys = "enter detail · s sort · S reverse · l last log · R run · p pause · u resume · e edit · o session · D delete · / filter · X kill switch · ? keys · q quit"
 	case detailScreen:
 		keys = "j/k runs · enter log · J/K scroll · R run · p/u pause/resume · e edit · o session · D delete · esc back · q quit"
 	default:
@@ -215,6 +215,7 @@ func legend() []string {
 		"j/k ↑/↓  move           enter  open             esc  back / clear filter   r  reload now",
 		"R  run now (detached)    p  pause   u  resume    e  edit the file in $EDITOR, then check",
 		"l  log of the last run   o  go to the run's ACP session (herdr tab)   D  delete (type the id)",
+		"s  sort by id, next, last run, state, owner   S  reverse the order",
 		"/  filter by id or owner   X  kill switch on/off   ?  hide this   q  quit",
 	}
 }
@@ -236,7 +237,7 @@ func (m *model) renderList() []string {
 			idW = n
 		}
 	}
-	const stateW, nextW, lastW = 8, 16, 24
+	const stateW, nextW, lastW = 9, 17, 24
 	if max := m.width - stateW - nextW - lastW - 12; idW > max {
 		idW = max
 	}
@@ -261,12 +262,22 @@ func (m *model) renderList() []string {
 	if recW > longest {
 		recW = longest
 	}
-	head := "  " + pad("ID", idW) + "  " + pad("STATE", stateW) + "  " + pad("NEXT", nextW) + "  " + pad("LAST RUN", lastW)
+	col := func(name string) string {
+		label := sortLabels[name]
+		if m.sortBy != name {
+			return label
+		}
+		if m.sortDesc {
+			return label + " ▼"
+		}
+		return label + " ▲"
+	}
+	head := "  " + pad(col("id"), idW) + "  " + pad(col("state"), stateW) + "  " + pad(col("next"), nextW) + "  " + pad(col("last"), lastW)
 	if recW > 5 {
 		head += "  " + pad("RECURRENCE", recW)
 	}
 	if ownerW > 5 {
-		head += "  OWNER"
+		head += "  " + col("owner")
 	}
 	out := []string{sMuted.Render(head)}
 

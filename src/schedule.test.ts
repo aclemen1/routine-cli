@@ -47,6 +47,19 @@ test("rules that differ only by their times read as one sentence", () => {
   assert.equal(buildSchedule("FREQ=DAILY;COUNT=1", "2026-10-10T09:00", TZ).text, "once, on 2026-10-10 09:00");
 });
 
+test("day lists and evenly spaced times are shortened", () => {
+  const text = (r: string) => buildSchedule(r, undefined, TZ).text;
+  assert.equal(text("FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=8;BYMINUTE=0"), "every day at 8 AM");
+  assert.equal(text("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=8;BYMINUTE=30"), "every weekday at 8:30 AM");
+  assert.equal(text("FREQ=WEEKLY;BYDAY=SA,SU;BYHOUR=9;BYMINUTE=0"), "every week on weekends at 9 AM");
+  assert.equal(
+    text("FREQ=HOURLY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=7,8,9,10,11,12,13,14,15,16,17,18,19;BYMINUTE=5"),
+    "every hour from 7:05 AM to 7:05 PM on weekdays",
+  );
+  assert.equal(text("FREQ=DAILY;BYHOUR=8,10,12;BYMINUTE=0"), "every 2 hours from 8 AM to 12 PM");
+  assert.equal(text("FREQ=DAILY;BYHOUR=8,9,12;BYMINUTE=0"), "every day at 8 AM, 9 AM and 12 PM");
+});
+
 test("invalid input is rejected", () => {
   assert.throws(() => buildSchedule("FREQ=SOMETIMES", undefined, TZ), /invalid rrule/);
   assert.throws(() => buildSchedule("DTSTART:20260101T000000\nRRULE:FREQ=DAILY", undefined, TZ), /dtstart/);

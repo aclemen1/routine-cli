@@ -76,6 +76,11 @@ type model struct {
 	logScroll int
 	follow    bool
 
+	sortBy   string
+	sortDesc bool
+	selID    string
+	saved    savedState
+
 	ask       *ask
 	legend    bool
 	msg       string
@@ -84,7 +89,9 @@ type model struct {
 }
 
 func main() {
-	if _, err := tea.NewProgram(&model{follow: true}).Run(); err != nil {
+	m := &model{follow: true}
+	m.restore(loadState())
+	if _, err := tea.NewProgram(m).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "routine tui:", err)
 		os.Exit(1)
 	}
@@ -160,6 +167,7 @@ func (m *model) rows() []row {
 			rows = append(rows, row{r: r})
 		}
 	}
+	sortRoutines(rows, m.sortBy, m.sortDesc)
 	for i := range m.list.Errors {
 		e := &m.list.Errors[i]
 		if f == "" || strings.Contains(strings.ToLower(e.ID), f) {
@@ -178,14 +186,29 @@ func (m *model) selected() *row {
 	return &r
 }
 
+// clamp keeps the cursor in the list and records the selected routine.
 func (m *model) clamp() {
-	n := len(m.rows())
-	if m.cursor >= n {
-		m.cursor = n - 1
+	rows := m.rows()
+	if m.cursor >= len(rows) {
+		m.cursor = len(rows) - 1
 	}
 	if m.cursor < 0 {
 		m.cursor = 0
 	}
+	if m.cursor < len(rows) {
+		m.selID = rows[m.cursor].id()
+	}
+}
+
+// keepSelection puts the cursor back on the selected routine after the list was reloaded or reordered.
+func (m *model) keepSelection() {
+	for i, r := range m.rows() {
+		if r.id() == m.selID {
+			m.cursor = i
+			return
+		}
+	}
+	m.clamp()
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -206,7 +229,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			m.list, m.status = msg.list, msg.status
 		}
-		m.clamp()
+		m.keepSelection()
 	case detailMsg:
 		if msg.id != m.detailID {
 			break
@@ -244,7 +267,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editedMsg:
 		return m, m.edited(msg)
 	case tea.KeyPressMsg:
-		return m, m.key(msg)
+		cmd := m.key(msg)
+		m.save()
+		return m, cmd
 	}
 	return m, nil
 }
@@ -268,7 +293,8 @@ func (m *model) key(k tea.KeyPressMsg) tea.Cmd {
 		default:
 			m.filter += k.Text
 		}
-		m.cursor, m.offset = 0, 0
+		m.offset = 0
+		m.keepSelection()
 		return nil
 	}
 	switch k.String() {
@@ -309,9 +335,20 @@ func (m *model) listKey(k string) tea.Cmd {
 		m.cursor = len(m.rows()) - 1
 	case "/":
 		m.typing = true
+	case "s":
+		m.sortBy = sorts[(sortIndex(m.sortBy)+1)%len(sorts)]
+		m.keepSelection()
+		m.say("sorted by "+sortLabels[m.sortBy], false)
+		return nil
+	case "S":
+		m.sortDesc = !m.sortDesc
+		m.keepSelection()
+		return nil
 	case "esc":
 		m.filter = ""
 		m.say("", false)
+		m.keepSelection()
+		return nil
 	case "enter":
 		if r := m.selected(); r != nil {
 			if r.bad != nil {
