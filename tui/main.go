@@ -92,6 +92,7 @@ type model struct {
 	runs     []runRecord
 	runCur   int
 
+	logFrom   screenKind
 	logPath   string
 	logTitle  string
 	logText   string
@@ -509,6 +510,7 @@ func (m *model) routineKey(k, id, file string, r *routine) tea.Cmd {
 }
 
 func (m *model) openLog(run runRecord) tea.Cmd {
+	m.logFrom = m.screen
 	m.screen, m.logPath, m.logText, m.logScroll, m.follow = logScreen, run.Log, "", 0, true
 	m.logTitle = run.ID + " · " + clock(run.Started) + " · " + run.Status
 	if m.detailID != run.ID {
@@ -521,7 +523,10 @@ func (m *model) logKey(k string) tea.Cmd {
 	page := m.height - 4
 	switch k {
 	case "esc", "backspace", "h", "left":
-		m.screen = detailScreen
+		m.screen = m.logFrom
+		if m.screen == listScreen {
+			return fetchList
+		}
 		return fetchDetail(m.detailID)
 	case "up", "k":
 		m.logScroll--
