@@ -45,6 +45,28 @@ type doneMsg struct {
 
 type tickMsg time.Time
 
+// A running routine's state spins, like a working agent in the office TUI.
+var (
+	spinner = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	frame   int
+)
+
+type spinMsg struct{}
+
+func spin(every time.Duration) tea.Cmd {
+	return tea.Tick(every, func(time.Time) tea.Msg { return spinMsg{} })
+}
+
+// spinning: some routine runs. Otherwise the beat slows down, to avoid redrawing for nothing.
+func (m *model) spinning() bool {
+	for _, r := range m.list.Routines {
+		if r.Running {
+			return true
+		}
+	}
+	return false
+}
+
 // ask is a one-line confirmation: done receives what was typed.
 type ask struct {
 	title, hint string
@@ -102,7 +124,7 @@ func tick() tea.Cmd {
 }
 
 func (m *model) Init() tea.Cmd {
-	return tea.Batch(fetchList, tick(), tea.RequestBackgroundColor)
+	return tea.Batch(fetchList, tick(), spin(time.Second), tea.RequestBackgroundColor)
 }
 
 func fetchList() tea.Msg {
@@ -221,6 +243,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		paneFocused = true
 	case tea.BlurMsg:
 		paneFocused = false
+	case spinMsg:
+		if !m.spinning() {
+			return m, spin(time.Second)
+		}
+		frame++
+		return m, spin(120 * time.Millisecond)
 	case tickMsg:
 		return m, tea.Batch(m.refresh(), tick())
 	case listMsg:

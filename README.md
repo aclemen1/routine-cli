@@ -144,7 +144,7 @@ Every command takes `--json`. Exit codes: 0 success, 1 failure, 2 usage error.
 
 ## TUI
 
-`routine tui` lists routines with their state, next occurrence, last run, recurrence in plain English and owner; `enter` opens a routine (rules, next occurrences, executor or steps, meta, body, recent runs with each step's status) and a run's log, followed live. Keys: `s` sort (id, next, last run, state, owner), `S` reverse, `R` run now, `p`/`u` pause/resume, `e` edit the file in `$EDITOR` then check it, `l` last log, `o` go to the run's ACP session (herdr tab, from herdr-acp's pane records), `D` delete, `/` filter, `X` kill switch, `?` keys, `q` quit. It reads and changes everything through `routine … --json`, and keeps its sort, filter, legend and selection in `tui.json` in the user's config directory.
+`routine tui` lists routines with their state (a spinner marks a running one), next occurrence, last run, recurrence in plain English and owner; `enter` opens a routine (rules, next occurrences, executor or steps, meta, body, recent runs with each step's status) and a run's log, followed live. Keys: `s` sort (id, next, last run, state, owner), `S` reverse, `R` run now, `p`/`u` pause/resume, `e` edit the file in `$EDITOR` then check it, `l` last log, `o` go to the run's ACP session (herdr tab, from herdr-acp's pane records), `D` delete, `/` filter, `X` kill switch, `?` keys, `q` quit. It reads and changes everything through `routine … --json`, and keeps its sort, filter, legend and selection in `tui.json` in the user's config directory.
 
 Built with Go and Bubble Tea: `npm run build:tui`.
 

@@ -298,7 +298,7 @@ func (m *model) renderList() []string {
 			state, st := "active", sOK
 			switch {
 			case rt.Running:
-				state, st = "running", sWork
+				state, st = spinner[frame%len(spinner)]+" running", sWork
 			case !rt.Active:
 				state, st = "paused", sMuted
 			}
@@ -365,7 +365,11 @@ func (m *model) renderDetail() []string {
 	case !r.Active:
 		state = "paused"
 	}
-	lines := []string{sAccent.Render(r.ID) + "  " + statusStyle(map[string]string{"active": "ok", "running": "running", "paused": "skipped"}[state]).Render(state), ""}
+	label := state
+	if state == "running" {
+		label = spinner[frame%len(spinner)] + " running"
+	}
+	lines := []string{sAccent.Render(r.ID) + "  " + statusStyle(map[string]string{"active": "ok", "running": "running", "paused": "skipped"}[state]).Render(label), ""}
 	lines = append(lines, field("when", r.Recurrence, w))
 	for _, rule := range r.Rrules {
 		lines = append(lines, field("rrule", rule, w))
