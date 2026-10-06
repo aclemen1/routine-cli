@@ -60,6 +60,7 @@ type routine struct {
 	ID            string         `json:"id"`
 	File          string         `json:"file"`
 	Owner         string         `json:"owner,omitempty"`
+	Description   string         `json:"description,omitempty"`
 	Active        bool           `json:"active"`
 	Running       bool           `json:"running"`
 	RunningSince  string         `json:"runningSince,omitempty"`

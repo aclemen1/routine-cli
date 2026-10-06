@@ -186,7 +186,7 @@ func (m *model) rows() []row {
 	var rows []row
 	for i := range m.list.Routines {
 		r := &m.list.Routines[i]
-		if f == "" || strings.Contains(strings.ToLower(r.ID+" "+r.Owner), f) {
+		if f == "" || strings.Contains(strings.ToLower(r.ID+" "+r.Owner+" "+r.Description), f) {
 			rows = append(rows, row{r: r})
 		}
 	}

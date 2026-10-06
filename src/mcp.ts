@@ -32,6 +32,7 @@ const acp = z
   .describe("Run the body as a prompt in a new ACP session instead of a shell command");
 
 const fields = {
+  description: z.string().describe("What the routine does, in one sentence"),
   dtstart: z.string().describe("Local start of the series, e.g. 2026-10-05T07:00"),
   tz: z.string().describe("Time zone, e.g. Europe/Zurich"),
   run: z.string().describe("Shell command; the body is passed on stdin"),

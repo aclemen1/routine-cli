@@ -92,6 +92,20 @@ test("meta is kept as is, shown by ls and show, removed by an empty value", () =
   assert.doesNotMatch(readFileSync(join(dir, "config", "tasks", "m.md"), "utf8"), /meta/);
 });
 
+test("description is written first, shown by ls and show, removed by an empty value", () => {
+  const dir = setup();
+  let r = cli(dir, "add", "d", "--rrule", "FREQ=DAILY", "--run", "true", "--description", "Pousse le cockpit sur GitHub");
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(readFileSync(join(dir, "config", "tasks", "d.md"), "utf8"), /^---\ndescription: Pousse le cockpit sur GitHub\n/);
+  assert.match(cli(dir, "ls").stdout, /d +Pousse le cockpit sur GitHub +active/);
+  assert.match(cli(dir, "show", "d").stdout, /about: +Pousse le cockpit sur GitHub/);
+  cli(dir, "add", "e", "--rrule", "FREQ=DAILY", "--run", `echo ${"x".repeat(100)}`);
+  cli(dir, "edit", "e", "--description", "Une description ajoutée après coup");
+  assert.match(readFileSync(join(dir, "config", "tasks", "e.md"), "utf8"), /^---\ndescription: Une description ajoutée après coup\nrrule: FREQ=DAILY\nrun: echo x{100}\n/);
+  r = cli(dir, "edit", "d", "--description", "", "--json");
+  assert.equal((JSON.parse(r.stdout) as { description?: string }).description, undefined);
+});
+
 test("usage errors exit with 2, check reports invalid files", () => {
   const dir = setup();
   assert.equal(cli(dir, "add", "x", "--rrule", "FREQ=DAILY").code, 2);

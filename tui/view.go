@@ -244,24 +244,23 @@ func (m *model) renderList() []string {
 	if idW < 8 {
 		idW = 8
 	}
-	rest := m.width - idW - stateW - nextW - lastW - 12
-	recW, ownerW := rest, 0
-	if rest > 40 {
-		ownerW = rest * 2 / 5
-		if ownerW > 22 {
-			ownerW = 22
+	// What is left goes to the owner (short), then the description, then the recurrence;
+	// each column is no wider than its longest value.
+	longestOf := func(header string, value func(*routine) string) int {
+		n := len(header)
+		for _, r := range rows {
+			if r.r != nil && len([]rune(value(r.r))) > n {
+				n = len([]rune(value(r.r)))
+			}
 		}
-		recW = rest - ownerW - 2
+		return n
 	}
-	longest := len("RECURRENCE")
-	for _, r := range rows {
-		if r.r != nil && len([]rune(r.r.Recurrence)) > longest {
-			longest = len([]rune(r.r.Recurrence))
-		}
-	}
-	if recW > longest {
-		recW = longest
-	}
+	rest := m.width - idW - stateW - nextW - lastW - 10
+	ownerW := min(longestOf("OWNER", func(r *routine) string { return r.Owner }), 22, rest/4)
+	rest -= ownerW + 2
+	descW := min(longestOf("DESCRIPTION", func(r *routine) string { return r.Description }), 60, max(rest/2, rest-50))
+	rest -= descW + 2
+	recW := min(longestOf("RECURRENCE", func(r *routine) string { return r.Recurrence }), rest)
 	col := func(name string) string {
 		label := sortLabels[name]
 		if m.sortBy != name {
@@ -272,7 +271,11 @@ func (m *model) renderList() []string {
 		}
 		return label + " ▲"
 	}
-	head := "  " + pad(col("id"), idW) + "  " + pad(col("state"), stateW) + "  " + pad(col("next"), nextW) + "  " + pad(col("last"), lastW)
+	head := "  " + pad(col("id"), idW)
+	if descW > 5 {
+		head += "  " + pad("DESCRIPTION", descW)
+	}
+	head += "  " + pad(col("state"), stateW) + "  " + pad(col("next"), nextW) + "  " + pad(col("last"), lastW)
 	if recW > 5 {
 		head += "  " + pad("RECURRENCE", recW)
 	}
@@ -312,7 +315,11 @@ func (m *model) renderList() []string {
 			} else if rt.LastRun != nil {
 				last, lst = clock(rt.LastRun.Started)+" "+rt.LastRun.Status, statusStyle(rt.LastRun.Status)
 			}
-			line = sText.Render(pad(rt.ID, idW)) + "  " + st.Render(pad(state, stateW)) + "  " +
+			line = sText.Render(pad(rt.ID, idW)) + "  "
+			if descW > 5 {
+				line += sMuted.Render(pad(rt.Description, descW)) + "  "
+			}
+			line += st.Render(pad(state, stateW)) + "  " +
 				sText.Render(pad(next, nextW)) + "  " + lst.Render(pad(last, lastW))
 			if recW > 5 {
 				line += "  " + sText.Render(pad(rt.Recurrence, recW))
@@ -374,7 +381,11 @@ func (m *model) renderDetail() []string {
 			label += " since " + clock(r.RunningSince)
 		}
 	}
-	lines := []string{sAccent.Render(r.ID) + "  " + statusStyle(map[string]string{"active": "ok", "running": "running", "paused": "skipped"}[state]).Render(label), ""}
+	lines := []string{sAccent.Render(r.ID) + "  " + statusStyle(map[string]string{"active": "ok", "running": "running", "paused": "skipped"}[state]).Render(label)}
+	if r.Description != "" {
+		lines = append(lines, sText.Render(trunc(r.Description, w)))
+	}
+	lines = append(lines, "")
 	lines = append(lines, field("when", r.Recurrence, w))
 	for _, rule := range r.Rrules {
 		lines = append(lines, field("rrule", rule, w))

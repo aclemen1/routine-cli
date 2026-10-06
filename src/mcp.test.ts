@@ -30,9 +30,11 @@ test("MCP tools create, list, edit and remove routines", async () => {
       rrule: ["FREQ=DAILY;BYHOUR=7;BYMINUTE=0"],
       acp: { command: "herdr-acp", args: ["--workspace", "routine"] },
       owner: "office:perso/P-0014",
+      description: "Briefing du matin",
       body: "Prépare le briefing.",
     });
     assert.equal(r.error, false, r.data);
+    assert.equal(r.data.description, "Briefing du matin");
     assert.deepEqual(r.data.acp, { command: "herdr-acp", args: ["--workspace", "routine"], close: "on-success", permissions: "reject" });
 
     r = await call("routine_add", { id: "x", rrule: ["FREQ=DAILY"] });

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
-import { Document, parseDocument } from "yaml";
+import { Document, isMap, parseDocument } from "yaml";
 import { checkTimeZone, type Config } from "./config.ts";
 import { parseDuration } from "./duration.ts";
 import { buildSchedule, type Schedule } from "./schedule.ts";
@@ -13,6 +13,7 @@ export interface Task {
   tz: string;
   active: boolean;
   owner?: string;
+  description?: string;
   timeoutMs: number;
   cwd?: string;
   run?: string;
@@ -157,7 +158,7 @@ export interface TaskError {
   error: string;
 }
 
-export const FIELDS = ["rrule", "dtstart", "tz", "run", "acp", "close", "permissions", "steps", "cwd", "timeout", "owner", "meta", "active"] as const;
+export const FIELDS = ["description", "rrule", "dtstart", "tz", "run", "acp", "close", "permissions", "steps", "cwd", "timeout", "owner", "meta", "active"] as const;
 export type Field = (typeof FIELDS)[number];
 const FIELD_SET = new Set<string>(FIELDS);
 const ID_RE = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/;
@@ -237,6 +238,8 @@ export function parseTask(id: string, file: string, text: string, config: Config
   if (steps) task.steps = steps;
   if (fm.meta) task.meta = fm.meta as Record<string, unknown>;
   if (dtstart !== undefined) task.dtstart = dtstart;
+  const description = str("description");
+  if (description !== undefined && description.trim()) task.description = description.trim();
   const owner = str("owner");
   if (owner !== undefined) task.owner = owner;
   const cwd = str("cwd");
@@ -291,10 +294,13 @@ export function writeTaskFile(file: string, values: FieldValues, body: string | 
     const value = values[key];
     if (value === undefined) continue;
     if (value === null) doc.delete(key);
-    else doc.set(key, value);
+    else if (key === "description" && !doc.has(key) && isMap(doc.contents)) {
+      // A new description goes first, where a reader looks for it.
+      doc.contents.items.unshift(doc.createPair(key, value));
+    } else doc.set(key, value);
   }
   const newBody = body ?? currentBody;
-  const text = `---\n${doc.toString().trimEnd()}\n---\n${newBody && !newBody.startsWith("\n") ? "\n" : ""}${newBody}`;
+  const text = `---\n${doc.toString({ lineWidth: 0 }).trimEnd()}\n---\n${newBody && !newBody.startsWith("\n") ? "\n" : ""}${newBody}`;
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.tmp-${process.pid}`;
   writeFileSync(tmp, text.endsWith("\n") ? text : `${text}\n`);

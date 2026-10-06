@@ -45,6 +45,7 @@ Usage:
   routine mcp                            serve these operations over MCP (stdio)
 
 Options for add and edit:
+  --description <text>   what the routine does, in one sentence
   --rrule <RRULE>        e.g. "FREQ=DAILY;BYHOUR=7;BYMINUTE=0"; repeat for several rules
   --dtstart <date-time>  local start of the series, e.g. 2026-10-05T07:00
   --tz <zone>            time zone, e.g. Europe/Zurich
@@ -73,6 +74,7 @@ class UsageError extends Error {}
 
 const FIELD_OPTIONS = {
   rrule: { type: "string", multiple: true },
+  description: { type: "string" },
   dtstart: { type: "string" },
   tz: { type: "string" },
   run: { type: "string" },
@@ -128,7 +130,7 @@ function routineInput(flags: FieldFlags, current?: RoutineInput["acp"]): Routine
   const input: RoutineInput = {};
   const str = (key: keyof typeof FIELD_OPTIONS) => (typeof flags[key] === "string" ? (flags[key] as string) : undefined);
   if (Array.isArray(flags.rrule)) input.rrule = flags.rrule;
-  for (const key of ["dtstart", "tz", "cwd", "timeout", "owner"] as const) {
+  for (const key of ["description", "dtstart", "tz", "cwd", "timeout", "owner"] as const) {
     const value = str(key);
     if (value !== undefined) input[key] = value === "" ? null : value;
   }
@@ -269,7 +271,7 @@ async function main(argv: string[]): Promise<number> {
       noPositional("ls", positionals);
       const result = listRoutines(ctx, values.owner);
       print(values.json, result, () => {
-        const rows = [["ID", "STATE", "NEXT", "LAST RUN", "RECURRENCE", "META"]];
+        const rows = [["ID", "DESCRIPTION", "STATE", "NEXT", "LAST RUN", "RECURRENCE", "META"]];
         for (const s of result.routines) {
           const state = s.running ? "running" : s.active ? "active" : "paused";
           const last = s.runningSince
@@ -277,7 +279,7 @@ async function main(argv: string[]): Promise<number> {
             : s.lastRun
               ? `${local(s.lastRun.started, tz)} ${s.lastRun.status}`
               : "-";
-          rows.push([s.id, state, local(s.next, tz), last, s.recurrence, s.meta ? JSON.stringify(s.meta) : "-"]);
+          rows.push([s.id, s.description ?? "-", state, local(s.next, tz), last, s.recurrence, s.meta ? JSON.stringify(s.meta) : "-"]);
         }
         const lines = result.routines.length ? [table(rows)] : ["no routine"];
         for (const e of result.errors) lines.push(`invalid ${e.id}: ${e.error}`);
@@ -291,6 +293,7 @@ async function main(argv: string[]): Promise<number> {
       print(values.json, detail, () => {
         const lines = [
           `id:        ${detail.id}`,
+          `about:     ${detail.description ?? "-"}`,
           `file:      ${detail.file}`,
           `state:     ${detail.running ? "running" : detail.active ? "active" : "paused"}`,
           `when:      ${detail.recurrence}`,

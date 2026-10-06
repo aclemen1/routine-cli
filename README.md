@@ -4,6 +4,7 @@ Runs scheduled routines. A routine is a Markdown file: its frontmatter gives an 
 
 ```markdown
 ---
+description: Send me the morning briefing
 rrule: FREQ=DAILY;BYHOUR=7;BYMINUTE=0
 run: office brief --send
 timeout: 10m
@@ -30,6 +31,7 @@ Text passed on stdin.
 
 | Field | Meaning | Default |
 |---|---|---|
+| `description` | What the routine does, in one sentence; written first in the file | none |
 | `rrule` | RRULE value without `DTSTART`, or a list of them | required |
 | `dtstart` | Local start of the series, e.g. `2026-10-05T07:00` | `2026-01-01T00:00` |
 | `tz` | Time zone of `dtstart` and the rule | config `tz` |
@@ -126,7 +128,7 @@ retention_days: 14
 
 ```sh
 routine add <id> --rrule <RRULE> (--run <command> | --acp-command <cmd> [--acp-arg=<arg>…] [--acp-meta <json>] [--close --permissions])
-              [--dtstart --tz --cwd --timeout --owner --meta <json> --body | --body-file] [--paused]
+              [--description --dtstart --tz --cwd --timeout --owner --meta <json> --body | --body-file] [--paused]
 routine edit <id> [same options]       # an empty value removes an optional field
 routine pause <id> | resume <id> | rm <id>
 routine ls [--owner <owner>[*]]
@@ -144,7 +146,7 @@ Every command takes `--json`. Exit codes: 0 success, 1 failure, 2 usage error.
 
 ## TUI
 
-`routine tui` lists routines with their state (a spinner marks a running one), next occurrence, last run, recurrence in plain English and owner; `enter` opens a routine (rules, next occurrences, executor or steps, meta, body, recent runs with each step's status) and a run's log, followed live. Keys: `s` sort (id, next, last run, state, owner), `S` reverse, `R` run now, `p`/`u` pause/resume, `e` edit the file in `$EDITOR` then check it, `l` last log, `o` go to the run's ACP session (herdr tab, from herdr-acp's pane records), `D` delete, `/` filter, `X` kill switch, `?` keys, `q` quit. It reads and changes everything through `routine … --json`, and keeps its sort, filter, legend and selection in `tui.json` in the user's config directory.
+`routine tui` lists routines with their description, state (a spinner marks a running one), next occurrence, last run, recurrence in plain English and owner; `enter` opens a routine (rules, next occurrences, executor or steps, meta, body, recent runs with each step's status) and a run's log, followed live. Keys: `s` sort (id, next, last run, state, owner), `S` reverse, `R` run now, `p`/`u` pause/resume, `e` edit the file in `$EDITOR` then check it, `l` last log, `o` go to the run's ACP session (herdr tab, from herdr-acp's pane records), `D` delete, `/` filter, `X` kill switch, `?` keys, `q` quit. It reads and changes everything through `routine … --json`, and keeps its sort, filter, legend and selection in `tui.json` in the user's config directory.
 
 Built with Go and Bubble Tea: `npm run build:tui`.
 
