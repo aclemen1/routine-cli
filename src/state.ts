@@ -118,6 +118,16 @@ export function tryLock(paths: Paths, id: string): (() => void) | null {
   return null;
 }
 
+// When the live run started: the lock is created as the run begins.
+export function lockSince(paths: Paths, id: string): string | null {
+  if (lockHolder(paths, id) === null) return null;
+  try {
+    return statSync(join(paths.locks, `${id}.lock`)).mtime.toISOString();
+  } catch {
+    return null;
+  }
+}
+
 export function lockHolder(paths: Paths, id: string): number | null {
   const file = join(paths.locks, `${id}.lock`);
   if (!existsSync(file)) return null;

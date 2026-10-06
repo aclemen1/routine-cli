@@ -307,7 +307,9 @@ func (m *model) renderList() []string {
 				next = clock(*rt.Next)
 			}
 			last, lst := "-", sMuted
-			if rt.LastRun != nil {
+			if rt.Running && rt.RunningSince != "" {
+				last, lst = "started "+clock(rt.RunningSince), sWork
+			} else if rt.LastRun != nil {
 				last, lst = clock(rt.LastRun.Started)+" "+rt.LastRun.Status, statusStyle(rt.LastRun.Status)
 			}
 			line = sText.Render(pad(rt.ID, idW)) + "  " + st.Render(pad(state, stateW)) + "  " +
@@ -368,6 +370,9 @@ func (m *model) renderDetail() []string {
 	label := state
 	if state == "running" {
 		label = spinner[frame%len(spinner)] + " running"
+		if r.RunningSince != "" {
+			label += " since " + clock(r.RunningSince)
+		}
 	}
 	lines := []string{sAccent.Render(r.ID) + "  " + statusStyle(map[string]string{"active": "ok", "running": "running", "paused": "skipped"}[state]).Render(label), ""}
 	lines = append(lines, field("when", r.Recurrence, w))

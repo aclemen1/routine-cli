@@ -5,7 +5,7 @@ import { formatDuration } from "./duration.ts";
 import { isDue, runNow } from "./engine.ts";
 import type { Paths } from "./paths.ts";
 import { nextOccurrences } from "./schedule.ts";
-import { lockHolder, readJournal, readState, removeState, writeState, type RunRecord } from "./state.ts";
+import { lockHolder, lockSince, readJournal, readState, removeState, writeState, type RunRecord } from "./state.ts";
 import {
   checkId,
   loadTasks,
@@ -52,6 +52,7 @@ export interface Summary {
   owner?: string;
   active: boolean;
   running: boolean;
+  runningSince?: string;
   rrules: string[];
   recurrence: string;
   dtstart?: string;
@@ -150,6 +151,8 @@ export function summarize(ctx: Context, task: Task, nowMs = Date.now()): Summary
     timeout: formatDuration(task.timeoutMs),
     next: next === undefined ? null : new Date(next).toISOString(),
   };
+  const since = summary.running ? lockSince(ctx.paths, task.id) : null;
+  if (since) summary.runningSince = since;
   if (task.owner) summary.owner = task.owner;
   if (task.dtstart) summary.dtstart = task.dtstart;
   if (task.cwd) summary.cwd = task.cwd;

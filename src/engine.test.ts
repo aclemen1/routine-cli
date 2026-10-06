@@ -132,3 +132,17 @@ test("invalid routine files are reported and do not block the others", async () 
   assert.deepEqual(result.errors.map((e) => [e.id, e.error]), [["bad", 'unknown field "when"']]);
   assert.ok(readState(paths, "good"));
 });
+
+test("a running routine reports when its run started", async () => {
+  const { paths, config } = setup();
+  addTask(paths, "busy", { rrule: "FREQ=DAILY", run: "true" });
+  mkdirSync(join(paths.locks), { recursive: true });
+  writeFileSync(join(paths.locks, "busy.lock"), String(process.pid));
+  const { summarize } = await import("./ops.ts");
+  const { readTask } = await import("./task.ts");
+  const summary = summarize({ paths, config }, readTask(paths.tasks, "busy", config));
+  assert.equal(summary.running, true);
+  assert.ok(Math.abs(Date.parse(summary.runningSince!) - Date.now()) < 5000);
+  writeFileSync(join(paths.locks, "busy.lock"), "999999");
+  assert.equal(summarize({ paths, config }, readTask(paths.tasks, "busy", config)).runningSince, undefined);
+});

@@ -272,7 +272,11 @@ async function main(argv: string[]): Promise<number> {
         const rows = [["ID", "STATE", "NEXT", "LAST RUN", "RECURRENCE", "META"]];
         for (const s of result.routines) {
           const state = s.running ? "running" : s.active ? "active" : "paused";
-          const last = s.lastRun ? `${local(s.lastRun.started, tz)} ${s.lastRun.status}` : "-";
+          const last = s.runningSince
+            ? `started ${local(s.runningSince, tz)}`
+            : s.lastRun
+              ? `${local(s.lastRun.started, tz)} ${s.lastRun.status}`
+              : "-";
           rows.push([s.id, state, local(s.next, tz), last, s.recurrence, s.meta ? JSON.stringify(s.meta) : "-"]);
         }
         const lines = result.routines.length ? [table(rows)] : ["no routine"];

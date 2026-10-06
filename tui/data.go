@@ -62,6 +62,7 @@ type routine struct {
 	Owner         string         `json:"owner,omitempty"`
 	Active        bool           `json:"active"`
 	Running       bool           `json:"running"`
+	RunningSince  string         `json:"runningSince,omitempty"`
 	Rrules        []string       `json:"rrules"`
 	Recurrence    string         `json:"recurrence"`
 	Dtstart       string         `json:"dtstart,omitempty"`
