@@ -3,9 +3,9 @@ import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Config } from "./config.ts";
 import { runTask } from "./execute.ts";
-import { notify, notifyEvent } from "./notify.ts";
+import { handleAlert } from "./notify.ts";
 import type { Paths } from "./paths.ts";
-import { dueOccurrence } from "./schedule.ts";
+import { dueOccurrence, nextOccurrences } from "./schedule.ts";
 import { appendJournal, floorMs, readState, tryLock, writeState, type RunRecord, type TaskState } from "./state.ts";
 import { loadTasks, readTask, type Task, type TaskError } from "./task.ts";
 
@@ -55,9 +55,9 @@ export async function execScheduled(paths: Paths, config: Config, id: string, no
     writeState(paths, id, { ...state, lastScheduled: scheduled });
     const record = await runTask(task, config, paths, { scheduled });
     const latest = readState(paths, id) ?? state;
-    writeState(paths, id, { ...latest, lastScheduled: scheduled, lastRun: record, failing: record.status !== "ok" });
     appendJournal(paths, record);
-    await notifyChange(task, config, latest.failing === true, record);
+    const alert = await alertAfterRun(task, config, latest, record);
+    writeState(paths, id, { ...withoutAlert(latest), lastScheduled: scheduled, lastRun: record, ...alert });
     return { id, outcome: "ran", record };
   } finally {
     release();
@@ -72,18 +72,25 @@ export async function runNow(paths: Paths, config: Config, id: string): Promise<
   try {
     const record = await runTask(task, config, paths, { manual: true });
     const state = readState(paths, id) ?? syncState(task, undefined, Date.parse(record.started));
-    writeState(paths, id, { ...state, lastRun: record, failing: record.status !== "ok" });
     appendJournal(paths, record);
-    await notifyChange(task, config, state.failing === true, record);
+    const alert = await alertAfterRun(task, config, state, record);
+    writeState(paths, id, { ...withoutAlert(state), lastRun: record, ...alert });
     return { id, outcome: "ran", record };
   } finally {
     release();
   }
 }
 
-async function notifyChange(task: Task, config: Config, wasFailing: boolean, record: RunRecord): Promise<void> {
-  const event = notifyEvent(wasFailing, record);
-  if (event) await notify(task, config, record, event);
+function withoutAlert(state: TaskState): TaskState {
+  const { failStreak: _a, failingSince: _b, alerted: _c, ...rest } = state as TaskState & { failing?: boolean };
+  delete (rest as { failing?: boolean }).failing;
+  return rest;
+}
+
+async function alertAfterRun(task: Task, config: Config, state: TaskState, record: RunRecord) {
+  const nowMs = Date.now();
+  const [next] = task.active ? nextOccurrences(task.schedule, nowMs, 1) : [];
+  return handleAlert(task, config, state, record, nowMs, next ?? null);
 }
 
 export interface TickResult {

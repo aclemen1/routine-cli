@@ -33,6 +33,7 @@ export interface RoutineInput {
   rrule?: string[];
   description?: string | null;
   on_failure?: string | null;
+  alert_after?: { failures?: number; duration?: string } | null;
   dtstart?: string | null;
   tz?: string | null;
   run?: string;
@@ -54,6 +55,7 @@ export interface Summary {
   owner?: string;
   description?: string;
   onFailure?: string;
+  alertAfter?: { failures?: number; duration?: string };
   active: boolean;
   running: boolean;
   runningSince?: string;
@@ -99,6 +101,7 @@ function toFieldValues(input: RoutineInput): FieldValues {
     const value = input[key];
     if (value !== undefined) values[key] = value === null || value === "" ? null : value;
   }
+  if (input.alert_after !== undefined) values.alert_after = input.alert_after === null || Object.keys(input.alert_after).length === 0 ? null : input.alert_after;
   if (input.meta !== undefined) values.meta = input.meta === null || Object.keys(input.meta).length === 0 ? null : input.meta;
   const executors = [input.run, input.acp, input.steps].filter((v) => v !== undefined).length;
   if (executors > 1) throw new Error("give one of run, acp or steps");
@@ -160,6 +163,12 @@ export function summarize(ctx: Context, task: Task, nowMs = Date.now()): Summary
   if (task.owner) summary.owner = task.owner;
   if (task.description) summary.description = task.description;
   if (task.onFailure) summary.onFailure = task.onFailure;
+  if (task.alertAfter) {
+    const a: { failures?: number; duration?: string } = {};
+    if (task.alertAfter.failures !== undefined) a.failures = task.alertAfter.failures;
+    if (task.alertAfter.durationMs !== undefined) a.duration = formatDuration(task.alertAfter.durationMs);
+    summary.alertAfter = a;
+  }
   if (task.dtstart) summary.dtstart = task.dtstart;
   if (task.cwd) summary.cwd = task.cwd;
   if (task.run) summary.run = task.run;

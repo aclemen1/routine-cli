@@ -49,6 +49,7 @@ Usage:
 
 Options for add and edit:
   --description <text>   what the routine does, in one sentence
+  --alert-after <n,dur>  alert after n failed runs in a row or dur failing, e.g. "3,30m" (default from the config)
   --on-failure <cmd>     command run on first failure and recovery, instead of the config's; none: no notice
   --rrule <RRULE>        e.g. "FREQ=DAILY;BYHOUR=7;BYMINUTE=0"; repeat for several rules
   --dtstart <date-time>  local start of the series, e.g. 2026-10-05T07:00
@@ -80,6 +81,7 @@ const FIELD_OPTIONS = {
   rrule: { type: "string", multiple: true },
   description: { type: "string" },
   "on-failure": { type: "string" },
+  "alert-after": { type: "string" },
   dtstart: { type: "string" },
   tz: { type: "string" },
   run: { type: "string" },
@@ -138,6 +140,15 @@ function routineInput(flags: FieldFlags, current?: RoutineInput["acp"]): Routine
   for (const key of ["description", "dtstart", "tz", "cwd", "timeout", "owner"] as const) {
     const value = str(key);
     if (value !== undefined) input[key] = value === "" ? null : value;
+  }
+  const alertAfter = str("alert-after");
+  if (alertAfter !== undefined) {
+    if (alertAfter === "") input.alert_after = null;
+    else {
+      const m = /^(?:(\d+)(?: failures?)?)?\s*(?:(?:,|or)\s*)?([\dsmh]+)?$/.exec(alertAfter.trim());
+      if (!m || (!m[1] && !m[2])) throw new UsageError('--alert-after expects e.g. "3,30m", "5" or "1h"');
+      input.alert_after = { ...(m[1] ? { failures: Number(m[1]) } : {}), ...(m[2] ? { duration: m[2] } : {}) };
+    }
   }
   const onFailure = str("on-failure");
   if (onFailure !== undefined) input.on_failure = onFailure === "" ? null : onFailure;
@@ -323,6 +334,7 @@ async function main(argv: string[]): Promise<number> {
         if (detail.cwd) lines.push(`cwd:       ${detail.cwd}`);
         if (detail.owner) lines.push(`owner:     ${detail.owner}`);
         if (detail.onFailure) lines.push(`on fail:   ${detail.onFailure}`);
+        if (detail.alertAfter) lines.push(`alert:     after ${[detail.alertAfter.failures !== undefined ? `${detail.alertAfter.failures} failures` : "", detail.alertAfter.duration ?? ""].filter(Boolean).join(" or ")}`);
         if (detail.meta) lines.push(`meta:      ${JSON.stringify(detail.meta)}`);
         lines.push(`upcoming:  ${detail.upcoming.length ? detail.upcoming.map((iso) => local(iso, detail.tz)).join(", ") : "-"}`);
         lines.push(`last run:  ${detail.lastRun ? runLine(detail.lastRun, detail.tz) : "-"}`);

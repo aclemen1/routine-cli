@@ -33,6 +33,9 @@ const acp = z
 
 const fields = {
   description: z.string().describe("What the routine does, in one sentence"),
+  alert_after: z
+    .object({ failures: z.number().int().min(1).optional(), duration: z.string().optional() })
+    .describe("Alert after this many failed runs in a row, or after failing this long, e.g. {failures: 3, duration: '30m'}; default from the config"),
   on_failure: z.string().describe("Command run on the first failure and on recovery, message on stdin; replaces the config's; 'none' turns notices off"),
   dtstart: z.string().describe("Local start of the series, e.g. 2026-10-05T07:00"),
   tz: z.string().describe("Time zone, e.g. Europe/Zurich"),

@@ -122,8 +122,13 @@ Statuses: `ok`, `failed` (exit ≠ 0, or the turn did not end with `end_turn`), 
 | what needs the user's attention now, an exchange with an agent | Telegram: `office tell` |
 | an emergency | Pushover |
 
-A failed routine is notified once, on Telegram, by the config's `on_failure`; its recovery too.
-`--on-failure '<cmd>'` replaces it for one routine, `--on-failure none` turns it off.
+A failing routine alerts once on Telegram (config `on_failure`) after `alert_after`: 3 failed runs in a row or 30 min failing, or at its first failure when its next run comes later than that. Its recovery is told only if the alert was.
+
+| Option | Effect for one routine |
+|---|---|
+| `--alert-after "5,1h"` | its own threshold |
+| `--on-failure '<cmd>'` | its own command |
+| `--on-failure none` | no alert |
 
 ## Guardrails
 

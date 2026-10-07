@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { Document, isMap, parseDocument } from "yaml";
-import { checkTimeZone, type Config } from "./config.ts";
+import { checkTimeZone, parseAlertAfter, type Config } from "./config.ts";
 import { parseDuration } from "./duration.ts";
 import { buildSchedule, type Schedule } from "./schedule.ts";
 
@@ -16,6 +16,7 @@ export interface Task {
   description?: string;
   // Overrides the config's on_failure; "none" turns notifications off.
   onFailure?: string;
+  alertAfter?: Partial<{ failures: number; durationMs: number }>;
   timeoutMs: number;
   cwd?: string;
   run?: string;
@@ -160,7 +161,7 @@ export interface TaskError {
   error: string;
 }
 
-export const FIELDS = ["description", "rrule", "dtstart", "tz", "run", "acp", "close", "permissions", "steps", "cwd", "timeout", "owner", "on_failure", "meta", "active"] as const;
+export const FIELDS = ["description", "rrule", "dtstart", "tz", "run", "acp", "close", "permissions", "steps", "cwd", "timeout", "owner", "on_failure", "alert_after", "meta", "active"] as const;
 export type Field = (typeof FIELDS)[number];
 const FIELD_SET = new Set<string>(FIELDS);
 const ID_RE = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/;
@@ -242,6 +243,7 @@ export function parseTask(id: string, file: string, text: string, config: Config
   if (dtstart !== undefined) task.dtstart = dtstart;
   const description = str("description");
   if (description !== undefined && description.trim()) task.description = description.trim();
+  if (fm.alert_after !== undefined && fm.alert_after !== null) task.alertAfter = parseAlertAfter(fm.alert_after, "alert_after");
   const onFailure = str("on_failure");
   if (onFailure !== undefined && onFailure.trim()) task.onFailure = onFailure;
   const owner = str("owner");

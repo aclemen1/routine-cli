@@ -10,12 +10,43 @@ const TAIL_LINES = 12;
 
 export type NotifyEvent = "failed" | "recovered";
 
-// The event a run brings: a first failure, or the first success after failures.
-export function notifyEvent(wasFailing: boolean, record: RunRecord): NotifyEvent | null {
-  const failing = record.status !== "ok";
-  if (failing && !wasFailing) return "failed";
-  if (!failing && wasFailing) return "recovered";
-  return null;
+export interface AlertThreshold {
+  failures: number;
+  durationMs: number;
+}
+
+// Kept in the routine's state between runs.
+export interface AlertState {
+  failStreak?: number;
+  failingSince?: string;
+  alerted?: boolean;
+}
+
+// A failing routine alerts once its streak reaches the threshold, once it has failed for the
+// threshold's duration, or at once when its next run would come after that duration.
+export function shouldAlert(threshold: AlertThreshold, streak: number, sinceMs: number, nowMs: number, nextMs: number | null): boolean {
+  const deadline = sinceMs + threshold.durationMs;
+  return streak >= threshold.failures || nowMs >= deadline || nextMs === null || nextMs > deadline;
+}
+
+export function threshold(task: Task, config: Config): AlertThreshold {
+  return { ...config.alertAfter, ...task.alertAfter };
+}
+
+// Updates the alert state after a run and sends what it calls for. The recovery is told only
+// when the failure was; an alert that could not be sent is tried again on the next failed run.
+export async function handleAlert(task: Task, config: Config, before: AlertState, record: RunRecord, nowMs: number, nextMs: number | null): Promise<AlertState> {
+  if (record.status === "ok") {
+    if (before.alerted) await notify(task, config, record, "recovered", before);
+    return {};
+  }
+  const streak = (before.failStreak ?? 0) + 1;
+  const since = before.failingSince ?? record.started;
+  let alerted = before.alerted === true;
+  if (!alerted && shouldAlert(threshold(task, config), streak, Date.parse(since), nowMs, nextMs)) {
+    alerted = await notify(task, config, record, "failed", { failStreak: streak, failingSince: since });
+  }
+  return { failStreak: streak, failingSince: since, ...(alerted ? { alerted } : {}) };
 }
 
 function tail(file: string): string {
@@ -24,12 +55,19 @@ function tail(file: string): string {
   return lines.slice(-TAIL_LINES).join("\n");
 }
 
-export function notifyText(task: Task, record: RunRecord, event: NotifyEvent): string {
+function since(iso: string | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return ` since ${d.toLocaleString("fr-CH", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`;
+}
+
+export function notifyText(task: Task, record: RunRecord, event: NotifyEvent, alert: AlertState = {}): string {
   const lines: string[] = [];
+  const runs = alert.failStreak && alert.failStreak > 1 ? `${alert.failStreak} failed runs` : "1 failed run";
   if (event === "failed") {
-    lines.push(`Routine ${task.id}: ${record.status}${record.error ? ` (${record.error})` : ""}`);
+    lines.push(`Routine ${task.id}: ${record.status}${record.error ? ` (${record.error})` : ""}, ${runs}${since(alert.failingSince)}`);
   } else {
-    lines.push(`Routine ${task.id}: ok again`);
+    lines.push(`Routine ${task.id}: ok again after ${runs}${since(alert.failingSince)}`);
   }
   if (task.description) lines.push(task.description);
   if (record.steps) lines.push(`Steps: ${record.steps.map((s) => `${s.name} ${s.status}`).join(", ")}`);
@@ -48,9 +86,9 @@ export function notifyCommand(task: Task, config: Config): string | null {
 }
 
 // Runs the on_failure command with the message on stdin. Its outcome goes to the run log; it never fails the run.
-export async function notify(task: Task, config: Config, record: RunRecord, event: NotifyEvent): Promise<void> {
+export async function notify(task: Task, config: Config, record: RunRecord, event: NotifyEvent, alert: AlertState = {}): Promise<boolean> {
   const command = notifyCommand(task, config);
-  if (!command) return;
+  if (!command) return false;
   const [shell, ...shellArgs] = config.shell;
   const note = (text: string) => {
     try {
@@ -59,7 +97,7 @@ export async function notify(task: Task, config: Config, record: RunRecord, even
       // the run log is gone
     }
   };
-  await new Promise<void>((resolve) => {
+  return await new Promise<boolean>((resolve) => {
     let output = "";
     const child = spawn(shell!, [...shellArgs, command], {
       cwd: homedir(),
@@ -78,16 +116,16 @@ export async function notify(task: Task, config: Config, record: RunRecord, even
     child.stdout?.on("data", (chunk) => (output += chunk));
     child.stderr?.on("data", (chunk) => (output += chunk));
     child.stdin?.on("error", () => {});
-    child.stdin?.end(notifyText(task, record, event));
+    child.stdin?.end(notifyText(task, record, event, alert));
     child.on("error", (error) => {
       clearTimeout(timer);
       note(`${event}: ${error.message}`);
-      resolve();
+      resolve(false);
     });
     child.on("close", (code) => {
       clearTimeout(timer);
       note(`${event}: ${code === 0 ? "sent" : `on_failure exited ${code}`}${output.trim() ? ` · ${output.trim().split("\n").at(-1)}` : ""}`);
-      resolve();
+      resolve(code === 0);
     });
   });
 }
