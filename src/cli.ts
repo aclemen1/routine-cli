@@ -49,6 +49,7 @@ Usage:
 
 Options for add and edit:
   --description <text>   what the routine does, in one sentence
+  --on-failure <cmd>     command run on first failure and recovery, instead of the config's; none: no notice
   --rrule <RRULE>        e.g. "FREQ=DAILY;BYHOUR=7;BYMINUTE=0"; repeat for several rules
   --dtstart <date-time>  local start of the series, e.g. 2026-10-05T07:00
   --tz <zone>            time zone, e.g. Europe/Zurich
@@ -78,6 +79,7 @@ class UsageError extends Error {}
 const FIELD_OPTIONS = {
   rrule: { type: "string", multiple: true },
   description: { type: "string" },
+  "on-failure": { type: "string" },
   dtstart: { type: "string" },
   tz: { type: "string" },
   run: { type: "string" },
@@ -137,6 +139,8 @@ function routineInput(flags: FieldFlags, current?: RoutineInput["acp"]): Routine
     const value = str(key);
     if (value !== undefined) input[key] = value === "" ? null : value;
   }
+  const onFailure = str("on-failure");
+  if (onFailure !== undefined) input.on_failure = onFailure === "" ? null : onFailure;
   const close = str("close");
   if (close !== undefined) input.close = close === "" ? null : (close as ClosePolicy);
   const permissions = str("permissions");
@@ -318,6 +322,7 @@ async function main(argv: string[]): Promise<number> {
         lines.push(`timeout:   ${detail.timeout}`);
         if (detail.cwd) lines.push(`cwd:       ${detail.cwd}`);
         if (detail.owner) lines.push(`owner:     ${detail.owner}`);
+        if (detail.onFailure) lines.push(`on fail:   ${detail.onFailure}`);
         if (detail.meta) lines.push(`meta:      ${JSON.stringify(detail.meta)}`);
         lines.push(`upcoming:  ${detail.upcoming.length ? detail.upcoming.map((iso) => local(iso, detail.tz)).join(", ") : "-"}`);
         lines.push(`last run:  ${detail.lastRun ? runLine(detail.lastRun, detail.tz) : "-"}`);

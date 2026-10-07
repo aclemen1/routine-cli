@@ -3,6 +3,7 @@ import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Config } from "./config.ts";
 import { runTask } from "./execute.ts";
+import { notify, notifyEvent } from "./notify.ts";
 import type { Paths } from "./paths.ts";
 import { dueOccurrence } from "./schedule.ts";
 import { appendJournal, floorMs, readState, tryLock, writeState, type RunRecord, type TaskState } from "./state.ts";
@@ -53,8 +54,10 @@ export async function execScheduled(paths: Paths, config: Config, id: string, no
     const scheduled = new Date(due).toISOString();
     writeState(paths, id, { ...state, lastScheduled: scheduled });
     const record = await runTask(task, config, paths, { scheduled });
-    writeState(paths, id, { ...(readState(paths, id) ?? state), lastScheduled: scheduled, lastRun: record });
+    const latest = readState(paths, id) ?? state;
+    writeState(paths, id, { ...latest, lastScheduled: scheduled, lastRun: record, failing: record.status !== "ok" });
     appendJournal(paths, record);
+    await notifyChange(task, config, latest.failing === true, record);
     return { id, outcome: "ran", record };
   } finally {
     release();
@@ -69,12 +72,18 @@ export async function runNow(paths: Paths, config: Config, id: string): Promise<
   try {
     const record = await runTask(task, config, paths, { manual: true });
     const state = readState(paths, id) ?? syncState(task, undefined, Date.parse(record.started));
-    writeState(paths, id, { ...state, lastRun: record });
+    writeState(paths, id, { ...state, lastRun: record, failing: record.status !== "ok" });
     appendJournal(paths, record);
+    await notifyChange(task, config, state.failing === true, record);
     return { id, outcome: "ran", record };
   } finally {
     release();
   }
+}
+
+async function notifyChange(task: Task, config: Config, wasFailing: boolean, record: RunRecord): Promise<void> {
+  const event = notifyEvent(wasFailing, record);
+  if (event) await notify(task, config, record, event);
 }
 
 export interface TickResult {

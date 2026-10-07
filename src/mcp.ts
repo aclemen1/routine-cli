@@ -33,6 +33,7 @@ const acp = z
 
 const fields = {
   description: z.string().describe("What the routine does, in one sentence"),
+  on_failure: z.string().describe("Command run on the first failure and on recovery, message on stdin; replaces the config's; 'none' turns notices off"),
   dtstart: z.string().describe("Local start of the series, e.g. 2026-10-05T07:00"),
   tz: z.string().describe("Time zone, e.g. Europe/Zurich"),
   run: z.string().describe("Shell command; the body is passed on stdin"),

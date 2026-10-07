@@ -114,6 +114,17 @@ Statuses: `ok`, `failed` (exit ≠ 0, or the turn did not end with `end_turn`), 
 
 `routine tui`: `enter` detail, `enter` on a run its log, `esc` back, `q` quit, `s`/`S` sort, `/` filter, `R` run, `p`/`u` pause/resume, `e` edit, `l` last log, `o` the run's ACP session, `D` delete, `X` kill switch, `?` keys.
 
+## Channels
+
+| What a routine sends the user | Channel |
+|---|---|
+| a report, a briefing, a summary | e-mail to alain@clement.aero |
+| what needs the user's attention now, an exchange with an agent | Telegram: `office tell` |
+| an emergency | Pushover |
+
+A failed routine is notified once, on Telegram, by the config's `on_failure`; its recovery too.
+`--on-failure '<cmd>'` replaces it for one routine, `--on-failure none` turns it off.
+
 ## Guardrails
 
 - A routine sends without review only to the user (Telegram, the user's own e-mail). For anyone else it writes a draft.

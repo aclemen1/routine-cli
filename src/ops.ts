@@ -32,6 +32,7 @@ export interface Context {
 export interface RoutineInput {
   rrule?: string[];
   description?: string | null;
+  on_failure?: string | null;
   dtstart?: string | null;
   tz?: string | null;
   run?: string;
@@ -52,6 +53,7 @@ export interface Summary {
   file: string;
   owner?: string;
   description?: string;
+  onFailure?: string;
   active: boolean;
   running: boolean;
   runningSince?: string;
@@ -84,7 +86,7 @@ export interface EngineStatus {
   invalid: number;
 }
 
-const OPTIONAL = ["description", "dtstart", "tz", "cwd", "timeout", "owner", "close", "permissions"] as const;
+const OPTIONAL = ["description", "on_failure", "dtstart", "tz", "cwd", "timeout", "owner", "close", "permissions"] as const;
 
 // An empty string or null removes an optional field. Setting run drops acp and the reverse.
 function toFieldValues(input: RoutineInput): FieldValues {
@@ -157,6 +159,7 @@ export function summarize(ctx: Context, task: Task, nowMs = Date.now()): Summary
   if (since) summary.runningSince = since;
   if (task.owner) summary.owner = task.owner;
   if (task.description) summary.description = task.description;
+  if (task.onFailure) summary.onFailure = task.onFailure;
   if (task.dtstart) summary.dtstart = task.dtstart;
   if (task.cwd) summary.cwd = task.cwd;
   if (task.run) summary.run = task.run;

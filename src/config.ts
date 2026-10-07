@@ -9,9 +9,11 @@ export interface Config {
   shell: string[];
   env: Record<string, string>;
   retentionDays: number;
+  // Shell command run on a routine's first failure and on its recovery; the message comes on stdin.
+  onFailure?: string;
 }
 
-const KEYS = new Set(["tz", "timeout", "shell", "env", "retention_days"]);
+const KEYS = new Set(["tz", "timeout", "shell", "env", "retention_days", "on_failure"]);
 
 export function defaultConfig(): Config {
   return {
@@ -45,6 +47,10 @@ export function loadConfig(paths: Paths): Config {
       throw new Error(`${paths.configFile}: env must be a mapping`);
     }
     config.env = Object.fromEntries(Object.entries(data.env).map(([k, v]) => [k, String(v)]));
+  }
+  if (data.on_failure !== undefined && data.on_failure !== null) {
+    if (typeof data.on_failure !== "string" || !data.on_failure.trim()) throw new Error(`${paths.configFile}: on_failure must be a command`);
+    config.onFailure = data.on_failure;
   }
   if (data.retention_days !== undefined) {
     const days = Number(data.retention_days);

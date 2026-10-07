@@ -36,6 +36,8 @@ export interface TaskState {
   lastScheduled?: string;
   inactiveSeen?: boolean;
   lastRun?: RunRecord;
+  // Set by a failed run, cleared by an ok one: on_failure fires on each change.
+  failing?: boolean;
 }
 
 function stateFile(paths: Paths, id: string): string {

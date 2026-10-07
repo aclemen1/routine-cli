@@ -43,6 +43,7 @@ Text passed on stdin.
 | `cwd` | Working directory | home |
 | `timeout` | `30s`, `10m`, `1h30m`; with `steps`, the budget of the whole run | config `timeout` |
 | `owner` | Free label for the program that manages the routine | none |
+| `on_failure` | Command run on the first failure and on recovery, instead of the config's; `none` turns it off | config `on_failure` |
 | `meta` | Free mapping kept as is, returned by `ls` and `show`, ignored for scheduling | none |
 | `active` | `false` pauses the routine | `true` |
 
@@ -113,7 +114,10 @@ timeout: 25m
 shell: [/bin/zsh, -lc]
 env: { }
 retention_days: 14
+on_failure: office tell desk --file /dev/stdin   # optional
 ```
+
+`on_failure` runs when a routine fails after an `ok` run (or on its first run), and again when it is `ok` after failures; repeated failures stay quiet. It gets the message on stdin (id, status, error, description, log path, last lines of the log) and `ROUTINE_ID`, `ROUTINE_EVENT` (`failed` or `recovered`), `ROUTINE_STATUS`, `ROUTINE_LOG`, `ROUTINE_ERROR`. Its outcome is written at the end of the run log; it never changes the run's status.
 
 ## Schedule rules
 

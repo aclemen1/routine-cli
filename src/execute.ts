@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
@@ -59,7 +59,10 @@ export async function runTask(task: Task, config: Config, paths: Paths, options:
   const started = new Date();
   const logDir = join(paths.runs, task.id);
   mkdirSync(logDir, { recursive: true });
-  const log = join(logDir, `${stamp(started)}.log`);
+  // Two runs in the same second get distinct files.
+  let base = stamp(started);
+  for (let n = 2; existsSync(join(logDir, `${base}.log`)); n++) base = `${stamp(started)}-${n}`;
+  const log = join(logDir, `${base}.log`);
   const out = openSync(log, "a");
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -73,7 +76,7 @@ export async function runTask(task: Task, config: Config, paths: Paths, options:
   let steps: StepRecord[] | undefined;
   try {
     if (task.steps) {
-      const runDir = join(logDir, `${stamp(started)}.d`);
+      const runDir = join(logDir, `${base}.d`);
       mkdirSync(runDir, { recursive: true });
       ({ outcome, steps } = await runSteps(task, task.steps, { config, out, cwd, env: { ...env, ROUTINE_RUN_DIR: runDir }, runDir, started }));
     } else {
