@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import { loadConfig } from "./config.ts";
@@ -42,6 +43,8 @@ Usage:
   routine tick [--foreground]            run what is due (called every minute)
   routine stop | start | status          global kill switch
   routine tui                            terminal interface
+  routine skill [show|install] [--for claude] [--dir <dir>]
+                                         print the agent skill, or write it to ~/.claude/skills/routine/
   routine mcp                            serve these operations over MCP (stdio)
 
 Options for add and edit:
@@ -223,7 +226,7 @@ function statusText(status: EngineStatus): string {
 
 async function main(argv: string[]): Promise<number> {
   const [command, ...args] = argv;
-  if (!command || command === "-h" || command === "--help" || command === "help") {
+  if (!command || command === "-h" || command === "--help" || command === "help" || args.includes("-h") || args.includes("--help")) {
     process.stdout.write(USAGE);
     return command ? 0 : 2;
   }
@@ -371,6 +374,24 @@ async function main(argv: string[]): Promise<number> {
       noPositional(command, positionals);
       const status = command === "status" ? engineStatus(ctx) : setStopped(ctx, command === "stop");
       print(values.json, status, () => statusText(status));
+      return 0;
+    }
+    case "skill": {
+      const { values, positionals } = parse(args, { for: { type: "string" }, dir: { type: "string" } });
+      const verb = positionals[0] ?? "show";
+      if (positionals.length > 1 || (verb !== "show" && verb !== "install")) throw new UsageError("skill takes show or install");
+      const text = readFileSync(join(import.meta.dirname, "..", "skill", "SKILL.md"), "utf8");
+      if (verb === "show") {
+        process.stdout.write(text);
+        return 0;
+      }
+      const harness = values.for ?? "claude";
+      if (harness !== "claude") throw new UsageError("--for: claude only");
+      const dir = values.dir ?? join(homedir(), ".claude", "skills", "routine");
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, "SKILL.md");
+      writeFileSync(file, text);
+      print(values.json, { installed: file }, () => `installed ${file}`);
       return 0;
     }
     case "tui": {

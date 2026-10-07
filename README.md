@@ -139,6 +139,7 @@ routine check
 routine tick [--foreground]
 routine stop | start | status
 routine tui                            # terminal interface
+routine skill [show|install]           # agent skill; install writes ~/.claude/skills/routine/SKILL.md
 routine mcp                            # MCP server on stdio
 ```
 

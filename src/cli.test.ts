@@ -124,3 +124,16 @@ test("stop and start toggle the kill switch", () => {
   assert.match(cli(dir, "tick").stdout, /stopped/);
   assert.match(cli(dir, "start").stdout, /^running/);
 });
+
+test("skill show prints the embedded skill, install writes it", () => {
+  const dir = setup();
+  const shown = cli(dir, "skill", "show");
+  assert.equal(shown.code, 0, shown.stderr);
+  assert.match(shown.stdout, /^---\nname: routine\ndescription: /);
+  const target = join(dir, "skills");
+  const r = cli(dir, "skill", "install", "--dir", target);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout, `installed ${join(target, "SKILL.md")}\n`);
+  assert.equal(readFileSync(join(target, "SKILL.md"), "utf8"), shown.stdout);
+  assert.equal(cli(dir, "skill", "remove").code, 2);
+});
