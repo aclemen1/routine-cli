@@ -107,6 +107,7 @@ type model struct {
 
 	sortBy   string
 	sortDesc bool
+	pendingG bool
 	selID    string
 	saved    savedState
 
@@ -357,7 +358,17 @@ func (m *model) key(k tea.KeyPressMsg) tea.Cmd {
 		m.keepSelection()
 		return nil
 	}
-	switch k.String() {
+	key := k.String()
+	// gg goes to the top: a first g waits for the second.
+	if key == "g" {
+		if !m.pendingG {
+			m.pendingG = true
+			return nil
+		}
+		key = "home"
+	}
+	m.pendingG = false
+	switch key {
 	case "q", "ctrl+c":
 		return tea.Quit
 	case "?":
@@ -371,11 +382,11 @@ func (m *model) key(k tea.KeyPressMsg) tea.Cmd {
 	}
 	switch m.screen {
 	case listScreen:
-		return m.listKey(k.String())
+		return m.listKey(key)
 	case detailScreen:
-		return m.detailKey(k.String())
+		return m.detailKey(key)
 	default:
-		return m.logKey(k.String())
+		return m.logKey(key)
 	}
 }
 
@@ -389,18 +400,18 @@ func (m *model) listKey(k string) tea.Cmd {
 		m.cursor -= m.listHeight() / 2
 	case "pgdown":
 		m.cursor += m.listHeight() / 2
-	case "home", "g":
+	case "home":
 		m.cursor = 0
 	case "end", "G":
 		m.cursor = len(m.rows()) - 1
 	case "/":
 		m.typing = true
-	case "s":
+	case "t":
 		m.sortBy = sorts[(sortIndex(m.sortBy)+1)%len(sorts)]
 		m.keepSelection()
 		m.say("sorted by "+sortLabels[m.sortBy], false)
 		return nil
-	case "S":
+	case "T", "S":
 		m.sortDesc = !m.sortDesc
 		m.keepSelection()
 		return nil
@@ -409,7 +420,7 @@ func (m *model) listKey(k string) tea.Cmd {
 		m.say("", false)
 		m.keepSelection()
 		return nil
-	case "enter":
+	case "enter", "l":
 		if r := m.selected(); r != nil {
 			if r.bad != nil {
 				m.say(r.bad.ID+": "+r.bad.Error, true)
@@ -420,7 +431,7 @@ func (m *model) listKey(k string) tea.Cmd {
 	default:
 		if r := m.selected(); r != nil {
 			if r.bad != nil {
-				if k == "e" || k == "D" {
+				if k == "E" || k == "#" || k == "D" {
 					return m.routineKey(k, r.bad.ID, r.bad.File, nil)
 				}
 				return nil
@@ -456,7 +467,7 @@ func (m *model) detailKey(k string) tea.Cmd {
 		if m.scrollDet -= 3; m.scrollDet < 0 {
 			m.scrollDet = 0
 		}
-	case "enter":
+	case "enter", "l":
 		if m.runCur < len(m.runs) {
 			run := m.runs[len(m.runs)-1-m.runCur]
 			return m.openLog(run)
@@ -483,7 +494,15 @@ func (m *model) routineKey(k, id, file string, r *routine) tea.Cmd {
 		}
 		m.say(id+": started", false)
 		return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
-	case "p":
+	case " ", "space":
+		if r == nil {
+			return nil
+		}
+		if r.Active {
+			return action(id+": paused", "pause", id)
+		}
+		return action(id+": resumed, missed occurrences are not caught up", "resume", id)
+	case "p", "e", "x":
 		if r != nil && !r.Active {
 			m.say(id+" is already paused", true)
 			return nil
@@ -495,10 +514,10 @@ func (m *model) routineKey(k, id, file string, r *routine) tea.Cmd {
 			return nil
 		}
 		return action(id+": resumed, missed occurrences are not caught up", "resume", id)
-	case "e":
+	case "E":
 		m.editing = true
 		return edit(id, file)
-	case "D":
+	case "#", "D":
 		m.ask = &ask{title: "Delete " + id, hint: "type the id to confirm; its schedule state goes too", done: func(v string) tea.Cmd {
 			if strings.TrimSpace(v) != id {
 				m.say(id+" kept", false)
@@ -509,7 +528,7 @@ func (m *model) routineKey(k, id, file string, r *routine) tea.Cmd {
 			}
 			return action(id+": deleted", "rm", id)
 		}}
-	case "l":
+	case "L":
 		if r != nil && r.LastRun != nil {
 			return m.openLog(*r.LastRun)
 		}
@@ -570,7 +589,7 @@ func (m *model) logKey(k string) tea.Cmd {
 		m.follow = false
 	case "pgdown", "J", "ctrl+d", " ":
 		m.logScroll += page / 2
-	case "home", "g":
+	case "home":
 		m.logScroll, m.follow = 0, false
 	case "end", "G", "f":
 		m.follow = true

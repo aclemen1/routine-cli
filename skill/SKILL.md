@@ -112,7 +112,7 @@ Statuses: `ok`, `failed` (exit ≠ 0, or the turn did not end with `end_turn`), 
 
 ## TUI
 
-`routine tui`: `enter` detail, `enter` on a run its log, `esc` back, `q` quit, `s`/`S` sort, `/` filter, `R` run, `p`/`u` pause/resume, `e` edit, `l` last log, `o` the run's ACP session, `D` delete, `X` kill switch, `?` keys.
+`routine tui`: `enter`/`l` open, `esc`/`h` back, `q` quit, `t`/`T` sort, `/` filter, `R` run, `space` pause/resume, `E` edit, `L` last log, `o` the run's ACP session, `#` delete, `X` kill switch, `?` keys.
 
 ## Channels
 

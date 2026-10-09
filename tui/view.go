@@ -205,22 +205,21 @@ func (m *model) footer() []string {
 	var keys string
 	switch m.screen {
 	case listScreen:
-		keys = "enter detail · s sort · S reverse · l last log · R run · p pause · u resume · e edit · o session · D delete · / filter · X kill switch · ? keys · q quit"
+		keys = "enter/l open · t sort · T reverse · R run · space pause/resume · E edit · L last log · o session · # delete · / filter · X kill switch · ? keys · q quit"
 	case detailScreen:
-		keys = "j/k runs · enter log · J/K scroll · R run · p/u pause/resume · e edit · o session · D delete · esc back · q quit"
+		keys = "j/k runs · enter/l log · J/K scroll · R run · space pause/resume · E edit · o session · # delete · esc/h back · q quit"
 	default:
-		keys = "j/k scroll · space/pgdown page · G follow · esc back · q quit"
+		keys = "j/k scroll · J/K page · gg top · G follow · esc/h back · q quit"
 	}
 	return append(lines, sMuted.Render(trunc(keys, m.width)))
 }
 
 func legend() []string {
 	return []string{
-		"j/k ↑/↓  move           enter  open             esc  back / clear filter   r  reload now",
-		"R  run now (detached)    p  pause   u  resume    e  edit the file in $EDITOR, then check",
-		"l  log of the last run   o  go to the run's ACP session (herdr tab)   D  delete (type the id)",
-		"s  sort by id, next, last run, state, owner   S  reverse the order",
-		"/  filter by id or owner   X  kill switch on/off   ?  hide this   q  quit",
+		"j/k ↓/↑  move   gg/G  top, bottom   enter/l  open   esc/h  back   J/K  scroll the detail   r  reload   q  quit",
+		"R  run now (detached)   space  pause or resume   e/x/p  pause   u  resume   E  edit the file in $EDITOR, then check",
+		"L  log of the last run   o  the run's ACP session (herdr tab)   #  delete, after typing the id",
+		"t  sort by id, next, last run, state, owner   T  reverse   /  filter by id, owner, description   X  kill switch   ?  hide",
 	}
 }
 
