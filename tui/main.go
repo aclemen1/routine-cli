@@ -319,6 +319,18 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, r
 		}
 		return m, cmd
+	case tea.PasteMsg:
+		// A paste (or fast dictation sent as one) goes whole into the active input.
+		text := strings.ReplaceAll(msg.Content, "\n", " ")
+		switch {
+		case m.ask != nil:
+			m.ask.value += text
+		case m.typing:
+			m.filter += text
+			m.offset = 0
+			m.keepSelection()
+		}
+		return m, nil
 	case binaryCheckMsg:
 		return m, m.onBinaryCheck()
 	case forceReloadMsg:

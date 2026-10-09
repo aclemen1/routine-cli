@@ -150,7 +150,57 @@ func (m *model) render() string {
 	for len(lines) < room {
 		lines = append(lines, "")
 	}
+	if m.ask != nil {
+		lines = m.overlay(lines)
+	}
 	return strings.Join(append(lines, footer...), "\n")
+}
+
+// overlay draws the confirmation as a centred modal over the screen.
+func (m *model) overlay(lines []string) []string {
+	w := min(72, m.width-4)
+	if w < 20 {
+		return lines
+	}
+	inner := w - 6
+	body := []string{sAccent.Render(m.ask.title), ""}
+	for _, l := range wrapText(m.ask.hint, inner) {
+		body = append(body, sMuted.Render(l))
+	}
+	value := []rune(m.ask.value)
+	if len(value) > inner-3 {
+		value = value[len(value)-(inner-3):]
+	}
+	body = append(body, "", sText.Render("> "+string(value)+"▏"), "", sMuted.Render("enter confirm · esc cancel"))
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cAccent).Padding(1, 2).Width(w).Render(strings.Join(body, "\n"))
+	boxLines := strings.Split(box, "\n")
+	top := max(0, (len(lines)-len(boxLines))/2)
+	left := strings.Repeat(" ", max(0, (m.width-lipgloss.Width(boxLines[0]))/2))
+	for i, l := range boxLines {
+		if top+i < len(lines) {
+			lines[top+i] = left + l
+		}
+	}
+	return lines
+}
+
+func wrapText(text string, width int) []string {
+	var out []string
+	line := ""
+	for _, word := range strings.Fields(text) {
+		if line != "" && len([]rune(line))+1+len([]rune(word)) > width {
+			out = append(out, line)
+			line = word
+		} else if line == "" {
+			line = word
+		} else {
+			line += " " + word
+		}
+	}
+	if line != "" {
+		out = append(out, line)
+	}
+	return out
 }
 
 func (m *model) header() string {
@@ -190,9 +240,6 @@ func (m *model) footer() []string {
 		}
 	}
 	switch {
-	case m.ask != nil:
-		lines = append(lines, sAccent.Render(m.ask.title)+" "+sMuted.Render("("+m.ask.hint+")"), sText.Render("> "+m.ask.value+"▏"))
-		return lines
 	case m.msg != "" && m.msgErr:
 		lines = append(lines, sErr.Render(trunc(m.msg, m.width)))
 	case m.msg != "":
