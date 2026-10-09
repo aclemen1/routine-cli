@@ -168,6 +168,9 @@ func (m *model) header() string {
 			parts = append(parts, sErr.Bold(true).Render("KILL SWITCH ON: nothing runs"))
 		}
 	}
+	if m.newVersion {
+		parts = append(parts, sWork.Bold(true).Render("new version: reloads when idle"))
+	}
 	if m.filter != "" || m.typing {
 		cursor := ""
 		if m.typing {
@@ -175,6 +178,7 @@ func (m *model) header() string {
 		}
 		parts = append(parts, sOpen.Render("filter: "+m.filter+cursor))
 	}
+	parts = append(parts, sMuted.Render(version))
 	return strings.Join(parts, sMuted.Render("  ·  "))
 }
 

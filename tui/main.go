@@ -99,6 +99,12 @@ type model struct {
 	logScroll int
 	follow    bool
 
+	binPath    string
+	binID      binaryID
+	newVersion bool
+	reloading  bool
+	editing    bool
+
 	sortBy   string
 	sortDesc bool
 	selID    string
@@ -114,9 +120,21 @@ type model struct {
 func main() {
 	m := &model{follow: true}
 	m.restore(loadState())
-	if _, err := tea.NewProgram(m).Run(); err != nil {
+	if exe, err := os.Executable(); err == nil {
+		m.binPath = exe
+		m.binID, _ = statBinary(exe)
+	}
+	p := tea.NewProgram(m)
+	listenUSR1(p)
+	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "routine tui:", err)
 		os.Exit(1)
+	}
+	if m.reloading {
+		if err := m.execReload(); err != nil {
+			fmt.Fprintln(os.Stderr, "routine tui: reload:", err)
+			os.Exit(1)
+		}
 	}
 }
 
@@ -125,7 +143,7 @@ func tick() tea.Cmd {
 }
 
 func (m *model) Init() tea.Cmd {
-	return tea.Batch(fetchList, tick(), spin(time.Second), tea.RequestBackgroundColor)
+	return tea.Batch(fetchList, tick(), spin(time.Second), checkBinary(), m.resume(), tea.RequestBackgroundColor)
 }
 
 func fetchList() tea.Msg {
@@ -294,10 +312,23 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.refresh()
 	case editedMsg:
-		return m, m.edited(msg)
+		m.editing = false
+		cmd := m.edited(msg)
+		if r := m.checkReload(); r != nil {
+			return m, r
+		}
+		return m, cmd
+	case binaryCheckMsg:
+		return m, m.onBinaryCheck()
+	case forceReloadMsg:
+		m.newVersion = true
+		return m, m.checkReload()
 	case tea.KeyPressMsg:
 		cmd := m.key(msg)
 		m.save()
+		if r := m.checkReload(); r != nil {
+			return m, r
+		}
 		return m, cmd
 	}
 	return m, nil
@@ -465,6 +496,7 @@ func (m *model) routineKey(k, id, file string, r *routine) tea.Cmd {
 		}
 		return action(id+": resumed, missed occurrences are not caught up", "resume", id)
 	case "e":
+		m.editing = true
 		return edit(id, file)
 	case "D":
 		m.ask = &ask{title: "Delete " + id, hint: "type the id to confirm; its schedule state goes too", done: func(v string) tea.Cmd {
