@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/aclemen1/tuikit"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -150,57 +151,7 @@ func (m *model) render() string {
 	for len(lines) < room {
 		lines = append(lines, "")
 	}
-	if m.ask != nil {
-		lines = m.overlay(lines)
-	}
-	return strings.Join(append(lines, footer...), "\n")
-}
-
-// overlay draws the confirmation as a centred modal over the screen.
-func (m *model) overlay(lines []string) []string {
-	w := min(72, m.width-4)
-	if w < 20 {
-		return lines
-	}
-	inner := w - 6
-	body := []string{sAccent.Render(m.ask.title), ""}
-	for _, l := range wrapText(m.ask.hint, inner) {
-		body = append(body, sMuted.Render(l))
-	}
-	value := []rune(m.ask.value)
-	if len(value) > inner-3 {
-		value = value[len(value)-(inner-3):]
-	}
-	body = append(body, "", sText.Render("> "+string(value)+"▏"), "", sMuted.Render("enter confirm · esc cancel"))
-	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cAccent).Padding(1, 2).Width(w).Render(strings.Join(body, "\n"))
-	boxLines := strings.Split(box, "\n")
-	top := max(0, (len(lines)-len(boxLines))/2)
-	left := strings.Repeat(" ", max(0, (m.width-lipgloss.Width(boxLines[0]))/2))
-	for i, l := range boxLines {
-		if top+i < len(lines) {
-			lines[top+i] = left + l
-		}
-	}
-	return lines
-}
-
-func wrapText(text string, width int) []string {
-	var out []string
-	line := ""
-	for _, word := range strings.Fields(text) {
-		if line != "" && len([]rune(line))+1+len([]rune(word)) > width {
-			out = append(out, line)
-			line = word
-		} else if line == "" {
-			line = word
-		} else {
-			line += " " + word
-		}
-	}
-	if line != "" {
-		out = append(out, line)
-	}
-	return out
+	return tuikit.Overlay(strings.Join(append(lines, footer...), "\n"), m.modal, m.width, m.height)
 }
 
 func (m *model) header() string {
@@ -252,7 +203,7 @@ func (m *model) footer() []string {
 	var keys string
 	switch m.screen {
 	case listScreen:
-		keys = "enter/l open · t sort · T reverse · R run · space pause/resume · E edit · L last log · o session · # delete · / filter · X kill switch · ? keys · q quit"
+		keys = "enter/l open · c new · E edit · t sort · T reverse · R run · space pause/resume · L last log · o session · # delete · / filter · X kill switch · ? keys · q quit"
 	case detailScreen:
 		keys = "j/k runs · enter/l log · J/K scroll · R run · space pause/resume · E edit · o session · # delete · esc/h back · q quit"
 	default:
@@ -264,7 +215,7 @@ func (m *model) footer() []string {
 func legend() []string {
 	return []string{
 		"j/k ↓/↑  move   gg/G  top, bottom   enter/l  open   esc/h  back   J/K  scroll the detail   r  reload   q  quit",
-		"R  run now (detached)   space  pause or resume   e/x/p  pause   u  resume   E  edit the file in $EDITOR, then check",
+		"c  new routine (form)   E  edit (form; the file in $EDITOR for steps)   R  run now   space  pause or resume   e/x/p  pause   u  resume",
 		"L  log of the last run   o  the run's ACP session (herdr tab)   #  delete, after typing the id",
 		"t  sort by id, next, last run, state, owner   T  reverse   /  filter by id, owner, description   X  kill switch   ?  hide",
 	}

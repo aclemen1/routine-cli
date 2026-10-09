@@ -27,10 +27,11 @@ routine show <id>                # fields, next occurrences, last run, body
 routine log [<id>] [-n 20]       # runs: status, duration, steps, log file
 routine status                   # kill switch, running, due
 routine check                    # invalid files
+routine describe --rrule '<RRULE>'   # check a rule: plain English, next occurrences
 routine tui                      # interactive view
 ```
 
-Every command takes `--json`.
+Output is a JSON envelope `{ok, result}` / `{ok: false, error: {code, kind, message}}`; add `--format text` to read. `routine schema [<category> [<action>]]` describes every action. Exit codes: 2 user_error, 3 not_found, 4 conflict, 5 locked.
 
 ## Write
 
@@ -112,7 +113,7 @@ Statuses: `ok`, `failed` (exit ≠ 0, or the turn did not end with `end_turn`), 
 
 ## TUI
 
-`routine tui`: `enter`/`l` open, `esc`/`h` back, `q` quit, `t`/`T` sort, `/` filter, `R` run, `space` pause/resume, `E` edit, `L` last log, `o` the run's ACP session, `#` delete, `X` kill switch, `?` keys.
+`routine tui`: `c` new routine (form), `E` edit (form; the file for steps), `enter`/`l` open, `esc`/`h` back, `q` quit, `t`/`T` sort, `/` filter, `R` run, `space` pause/resume, `L` last log, `o` the run's ACP session, `#` delete, `X` kill switch, `?` keys.
 
 ## Channels
 

@@ -1,8 +1,9 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
+
+	"github.com/aclemen1/tuikit"
 	"os"
 	"os/exec"
 	"strings"
@@ -67,13 +68,6 @@ func (m *model) spinning() bool {
 	return false
 }
 
-// ask is a one-line confirmation: done receives what was typed.
-type ask struct {
-	title, hint string
-	value       string
-	done        func(string) tea.Cmd
-}
-
 type model struct {
 	width, height int
 	screen        screenKind
@@ -111,7 +105,9 @@ type model struct {
 	selID    string
 	saved    savedState
 
-	ask       *ask
+	modal     *tuikit.Modal
+	onDone    func(tuikit.Values) tea.Cmd
+	preview   string
 	legend    bool
 	msg       string
 	msgErr    bool
@@ -119,6 +115,7 @@ type model struct {
 }
 
 func main() {
+	tuikit.SetLanguage(tuikit.English)
 	m := &model{follow: true}
 	m.restore(loadState())
 	if exe, err := os.Executable(); err == nil {
@@ -257,6 +254,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		if m.modal.Open() {
+			m.modal.SetSize(m.width, m.height)
+		}
+	case tuikit.DoneMsg:
+		m.modal = nil
+		cmd := m.modalDone(msg)
+		if r := m.checkReload(); r != nil && !m.modal.Open() {
+			return m, r
+		}
+		return m, cmd
+	case tuikit.CancelMsg:
+		m.modal, m.onDone = nil, nil
+		return m, m.checkReload()
 	case tea.BackgroundColorMsg:
 		darkBackground = msg.IsDark()
 	case tea.FocusMsg:
@@ -323,8 +333,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A paste (or fast dictation sent as one) goes whole into the active input.
 		text := strings.ReplaceAll(msg.Content, "\n", " ")
 		switch {
-		case m.ask != nil:
-			m.ask.value += text
+		case m.modal.Open():
+			return m, m.modal.Update(msg)
 		case m.typing:
 			m.filter += text
 			m.offset = 0
@@ -343,13 +353,18 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, r
 		}
 		return m, cmd
+	default:
+		// The modal's own messages (cursor blink, completion) go back to it.
+		if m.modal.Open() {
+			return m, m.modal.Update(msg)
+		}
 	}
 	return m, nil
 }
 
 func (m *model) key(k tea.KeyPressMsg) tea.Cmd {
-	if m.ask != nil {
-		return m.askKey(k)
+	if m.modal.Open() {
+		return m.modal.Update(k)
 	}
 	if m.typing {
 		switch k.String() {
@@ -418,6 +433,9 @@ func (m *model) listKey(k string) tea.Cmd {
 		m.cursor = len(m.rows()) - 1
 	case "/":
 		m.typing = true
+	case "c":
+		m.openRoutineForm(nil)
+		return nil
 	case "t":
 		m.sortBy = sorts[(sortIndex(m.sortBy)+1)%len(sorts)]
 		m.keepSelection()
@@ -527,19 +545,20 @@ func (m *model) routineKey(k, id, file string, r *routine) tea.Cmd {
 		}
 		return action(id+": resumed, missed occurrences are not caught up", "resume", id)
 	case "E":
+		if r != nil {
+			ok, why := formable(r)
+			if why != "" {
+				m.say(why, true)
+				return nil
+			}
+			if ok {
+				return m.openEditForm(r)
+			}
+		}
 		m.editing = true
 		return edit(id, file)
 	case "#", "D":
-		m.ask = &ask{title: "Delete " + id, hint: "type the id to confirm; its schedule state goes too", done: func(v string) tea.Cmd {
-			if strings.TrimSpace(v) != id {
-				m.say(id+" kept", false)
-				return nil
-			}
-			if m.screen != listScreen {
-				m.screen = listScreen
-			}
-			return action(id+": deleted", "rm", id)
-		}}
+		m.confirmDelete(id)
 	case "L":
 		if r != nil && r.LastRun != nil {
 			return m.openLog(*r.LastRun)
@@ -612,43 +631,6 @@ func (m *model) logKey(k string) tea.Cmd {
 	return nil
 }
 
-func (m *model) killSwitch() tea.Cmd {
-	if m.status.Stopped {
-		m.ask = &ask{title: "Restart the schedule?", hint: "y: routines run again on schedule", done: func(v string) tea.Cmd {
-			if strings.EqualFold(strings.TrimSpace(v), "y") {
-				return action("schedule restarted", "start")
-			}
-			return nil
-		}}
-		return nil
-	}
-	m.ask = &ask{title: "Stop every routine?", hint: "y: no routine runs until X again; running ones finish", done: func(v string) tea.Cmd {
-		if strings.EqualFold(strings.TrimSpace(v), "y") {
-			return action("kill switch on: nothing runs", "stop")
-		}
-		return nil
-	}}
-	return nil
-}
-
-func (m *model) askKey(k tea.KeyPressMsg) tea.Cmd {
-	switch k.String() {
-	case "esc", "ctrl+c":
-		m.ask = nil
-	case "enter":
-		a := m.ask
-		m.ask = nil
-		return a.done(a.value)
-	case "backspace":
-		if r := []rune(m.ask.value); len(r) > 0 {
-			m.ask.value = string(r[:len(r)-1])
-		}
-	default:
-		m.ask.value += k.Text
-	}
-	return nil
-}
-
 type editedMsg struct {
 	id  string
 	err error
@@ -676,9 +658,8 @@ func (m *model) edited(msg editedMsg) tea.Cmd {
 		Errors []invalid `json:"errors"`
 	}
 	// check exits 1 when a file is invalid; its JSON is still on stdout.
-	out, _ := command("check", "--json").Output()
 	m.say(msg.id+": saved and valid", false)
-	if json.Unmarshal(out, &check) == nil {
+	if call(&check, "check") == nil {
 		for _, e := range check.Errors {
 			if e.ID == msg.id {
 				m.say(msg.id+" is invalid: "+e.Error, true)

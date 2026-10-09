@@ -132,28 +132,36 @@ alert_after: { failures: 3, duration: 30m }
 
 ## Commands
 
+Every action prints a JSON envelope by default, `{"ok":true,"result":…}` or `{"ok":false,"error":{"code","kind","message"}}`; `--format text` prints for people (`schema`, `skill`, `version` print text unless `--format json`). `--json` is `--format json`.
+
 ```sh
-routine add <id> --rrule <RRULE> (--run <command> | --acp-command <cmd> [--acp-arg=<arg>…] [--acp-meta <json>] [--close --permissions])
-              [--description --dtstart --tz --cwd --timeout --owner --meta <json> --body | --body-file] [--paused]
-routine edit <id> [same options]       # an empty value removes an optional field
-routine pause <id> | resume <id> | rm <id>
 routine ls [--owner <owner>[*]]
 routine show <id> [-n <count>]
-routine run <id>                       # now, outside the schedule
+routine add <id> --rrule <RRULE> (--run <command> | --acp-command <cmd> [--acp-arg=<arg>…] [--acp-meta <json>] [--close --permissions] | --steps <json>)
+              [--description --dtstart --tz --cwd --timeout --owner --meta <json> --on-failure --alert-after --body | --body-file] [--paused]
+routine edit <id> [same options]       # an empty value removes an optional field
+routine pause <id> | resume <id> | rm <id>
+routine run <id>                       # now, outside the schedule; exit 1 when the run fails
 routine log [<id>] [-n <count>]
-routine check
-routine tick [--foreground]
-routine stop | start | status
-routine tui                            # terminal interface
-routine skill [show|install]           # agent skill; install writes ~/.claude/skills/routine/SKILL.md
-routine mcp                            # MCP server on stdio
+routine check                          # exit 1 when a file is invalid
+routine describe --rrule <RRULE> [--dtstart --tz -n]   # the recurrence in plain English, next occurrences
+routine tick [--foreground] | status | stop | start
+routine schema [<category> [<action>]] # catalog, category, one action's spec
+routine skill [show|install] | version | tui | mcp
 ```
 
-Every command takes `--json`. Exit codes: 0 success, 1 failure, 2 usage error.
+| Exit | Kind | When |
+|---|---|---|
+| 0 | | done |
+| 1 | `error` | failed; or the run (`run`) or a file (`check`) did not succeed, with `ok: true` |
+| 2 | `user_error` | bad argument, invalid routine |
+| 3 | `not_found` | no such routine |
+| 4 | `conflict` | the routine already exists |
+| 5 | `locked` | the routine is running |
 
 ## TUI
 
-`routine tui` lists routines with their description, state (a spinner marks a running one), next occurrence, last run, recurrence in plain English and owner; `enter` opens a routine (rules, next occurrences, executor or steps, meta, body, recent runs with each step's status) and a run's log, followed live. Keys follow the common TUI convention: `j`/`k` move, `gg`/`G` top/bottom, `enter`/`l` open, `esc`/`h` back, `J`/`K` scroll the detail, `/` filter, `t`/`T` sort/reverse (id, next, last run, state, owner), `r` reload, `R` run now, `space` pause or resume, `e`/`x` pause, `E` edit the file in `$EDITOR` then check it, `L` last log, `o` the run's ACP session (herdr tab, from herdr-acp's pane records), `#` delete after typing the id, `X` kill switch, `?` keys, `q` quit. Kept during the transition: `p`/`u` pause/resume, `S` reverse, `D` delete. It reads and changes everything through `routine … --json`, and keeps its sort, filter, legend and selection in `tui.json` in the user's config directory.
+`routine tui` lists routines with their description, state (a spinner marks a running one), next occurrence, last run, recurrence in plain English and owner; `enter` opens a routine (rules, next occurrences, executor or steps, meta, body, recent runs with each step's status) and a run's log, followed live. `c` opens a form for a new routine (id, description, type command or agent, recurrence from presets or any RRULE, command or prompt, directory, timeout); `E` opens the same form filled in, or the file in `$EDITOR` for a routine with steps or several rules; office's routines are changed with `office routine`. The recurrence is checked and shown in plain English before saving. Every input goes through a tuikit modal. Keys follow the common TUI convention: `j`/`k` move, `gg`/`G` top/bottom, `enter`/`l` open, `esc`/`h` back, `J`/`K` scroll the detail, `/` filter, `t`/`T` sort/reverse (id, next, last run, state, owner), `r` reload, `R` run now, `space` pause or resume, `e`/`x` pause, `c` new, `E` edit, `L` last log, `o` the run's ACP session (herdr tab, from herdr-acp's pane records), `#` delete after typing the id, `X` kill switch, `?` keys, `q` quit. Kept during the transition: `p`/`u` pause/resume, `S` reverse, `D` delete. It reads and changes everything through `routine … --json`, and keeps its sort, filter, legend and selection in `tui.json` in the user's config directory.
 
 Built with Go and Bubble Tea: `npm run build:tui` (`tui/build.sh` stamps the short commit, shown in the header). When its binary is rebuilt, or on `SIGUSR1`, the TUI reloads itself by `exec`, keeping its view, routine, sort, filter and selection; during input, a confirmation or an open editor it shows "new version" and reloads once idle.
 

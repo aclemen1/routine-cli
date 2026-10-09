@@ -2,6 +2,17 @@ import AppKit
 import Foundation
 import ServiceManagement
 
+// routine prints {ok, result} by default.
+struct Envelope<T: Decodable>: Decodable {
+    let ok: Bool
+    let result: T?
+}
+
+struct Failure: Decodable {
+    struct Detail: Decodable { let message: String }
+    let error: Detail
+}
+
 struct EngineStatus: Decodable {
     let stopped: Bool
     let routines: Int
@@ -80,7 +91,7 @@ final class Engine: ObservableObject {
 
     func tick() {
         Task {
-            let result = await cli(["tick"])
+            let result = await cli(["tick", "--format", "text"])
             lastTick = Date()
             appendLog(result.stdout, result.stderr)
             lastError = result.status == 0 ? nil : (result.stderr.isEmpty ? "routine tick: exit \(result.status)" : result.stderr)
@@ -89,14 +100,14 @@ final class Engine: ObservableObject {
     }
 
     func refresh() async {
-        if let s: EngineStatus = await decode(["status", "--json"]) { status = s }
-        if let list: RoutineList = await decode(["ls", "--json"]) { routines = list.routines }
-        if let log: [RunRecord] = await decode(["log", "-n", "8", "--json"]) { recent = log }
+        if let s: EngineStatus = await decode(["status"]) { status = s }
+        if let list: RoutineList = await decode(["ls"]) { routines = list.routines }
+        if let log: [RunRecord] = await decode(["log", "-n", "8"]) { recent = log }
     }
 
     func runNow(_ id: String) {
         Task {
-            let result = await cli(["run", id])
+            let result = await cli(["run", id, "--format", "text"])
             appendLog(result.stdout, result.stderr)
             await refresh()
         }
@@ -131,10 +142,11 @@ final class Engine: ObservableObject {
     private func decode<T: Decodable>(_ arguments: [String]) async -> T? {
         let result = await cli(arguments)
         guard result.status == 0 else {
-            if !result.stderr.isEmpty { lastError = result.stderr }
+            let failed = try? JSONDecoder().decode(Failure.self, from: result.stdout)
+            lastError = failed?.error.message ?? (result.stderr.isEmpty ? "routine \(arguments.first ?? ""): exit \(result.status)" : result.stderr)
             return nil
         }
-        return try? JSONDecoder().decode(T.self, from: result.stdout)
+        return try? JSONDecoder().decode(Envelope<T>.self, from: result.stdout).result
     }
 
     private func appendLog(_ stdout: Data, _ stderr: String) {

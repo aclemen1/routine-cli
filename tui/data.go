@@ -118,21 +118,42 @@ func command(args ...string) *exec.Cmd {
 	return exec.Command(argv[0], argv[1:]...)
 }
 
+// envelope is what routine prints: {ok, result} or {ok: false, error}.
+type envelope struct {
+	OK     bool            `json:"ok"`
+	Result json.RawMessage `json:"result"`
+	Error  *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// call runs a routine action and decodes its result. A failed command reports
+// its error message; a command whose object failed (check, run) still decodes.
 func call(out any, args ...string) error {
-	cmd := command(append(args, "--json")...)
+	cmd := command(append(args, "--format", "json")...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
-	if err != nil {
-		if msg := strings.TrimSpace(strings.TrimPrefix(firstLine(stderr.String()), "routine: ")); msg != "" {
+	runErr := cmd.Run()
+	var env envelope
+	if err := json.Unmarshal(stdout.Bytes(), &env); err != nil {
+		if msg := strings.TrimSpace(firstLine(stderr.String())); msg != "" {
 			return errors.New(msg)
+		}
+		if runErr != nil {
+			return runErr
 		}
 		return err
 	}
-	if out == nil {
+	if !env.OK {
+		if env.Error != nil {
+			return errors.New(env.Error.Message)
+		}
+		return errors.New("routine " + strings.Join(args, " ") + " failed")
+	}
+	if out == nil || len(env.Result) == 0 {
 		return nil
 	}
-	return json.Unmarshal(stdout.Bytes(), out)
+	return json.Unmarshal(env.Result, out)
 }
 
 func firstLine(s string) string {

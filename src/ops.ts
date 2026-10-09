@@ -6,6 +6,7 @@ import { isDue, runNow } from "./engine.ts";
 import type { Paths } from "./paths.ts";
 import { nextOccurrences } from "./schedule.ts";
 import { lockHolder, lockSince, readJournal, readState, removeState, writeState, type RunRecord } from "./state.ts";
+import { conflict, locked, notFound, userError } from "./errors.ts";
 import {
   checkId,
   loadTasks,
@@ -94,7 +95,7 @@ const OPTIONAL = ["description", "on_failure", "dtstart", "tz", "cwd", "timeout"
 function toFieldValues(input: RoutineInput): FieldValues {
   const values: FieldValues = {};
   if (input.rrule !== undefined) {
-    if (input.rrule.length === 0 || input.rrule.some((r) => r.trim() === "")) throw new Error("rrule cannot be empty");
+    if (input.rrule.length === 0 || input.rrule.some((r) => r.trim() === "")) throw userError("rrule cannot be empty");
     values.rrule = input.rrule.length === 1 ? input.rrule[0]! : input.rrule;
   }
   for (const key of OPTIONAL) {
@@ -104,9 +105,9 @@ function toFieldValues(input: RoutineInput): FieldValues {
   if (input.alert_after !== undefined) values.alert_after = input.alert_after === null || Object.keys(input.alert_after).length === 0 ? null : input.alert_after;
   if (input.meta !== undefined) values.meta = input.meta === null || Object.keys(input.meta).length === 0 ? null : input.meta;
   const executors = [input.run, input.acp, input.steps].filter((v) => v !== undefined).length;
-  if (executors > 1) throw new Error("give one of run, acp or steps");
+  if (executors > 1) throw userError("give one of run, acp or steps");
   if (input.run !== undefined) {
-    if (!input.run.trim()) throw new Error("run cannot be empty");
+    if (!input.run.trim()) throw userError("run cannot be empty");
     values.run = input.run;
     values.acp = null;
     values.steps = null;
@@ -140,7 +141,7 @@ function writeValidated(ctx: Context, file: string, id: string, values: FieldVal
   } catch (error) {
     if (previous === undefined) rmSync(file, { force: true });
     else writeFileSync(file, previous);
-    throw new Error(`${id}: ${(error as Error).message}`);
+    throw userError(`${id}: ${(error as Error).message}`);
   }
 }
 
@@ -182,9 +183,9 @@ export function summarize(ctx: Context, task: Task, nowMs = Date.now()): Summary
 
 export function addRoutine(ctx: Context, id: string, input: RoutineInput, paused = false): Summary {
   const file = taskFile(ctx.paths.tasks, id);
-  if (existsSync(file)) throw new Error(`routine ${JSON.stringify(id)} already exists`);
-  if (!input.rrule?.length) throw new Error("a new routine needs rrule");
-  if (input.run === undefined && input.acp === undefined && input.steps === undefined) throw new Error("a new routine needs run, acp or steps");
+  if (existsSync(file)) throw conflict(`routine ${JSON.stringify(id)} already exists`);
+  if (!input.rrule?.length) throw userError("a new routine needs rrule");
+  if (input.run === undefined && input.acp === undefined && input.steps === undefined) throw userError("a new routine needs run, acp or steps");
   const task = writeValidated(ctx, file, id, { ...toFieldValues(input), active: !paused }, input.body);
   const since = new Date().toISOString();
   writeState(ctx.paths, id, paused ? { since, inactiveSeen: true } : { since });
@@ -210,7 +211,7 @@ export function setActive(ctx: Context, id: string, active: boolean): Summary {
 
 export function removeRoutine(ctx: Context, id: string): { id: string; removed: true } {
   const file = taskFile(ctx.paths.tasks, id);
-  if (!existsSync(file)) throw new Error(`no routine ${JSON.stringify(id)}`);
+  if (!existsSync(file)) throw notFound(`no routine ${JSON.stringify(id)}`);
   rmSync(file);
   removeState(ctx.paths, id);
   return { id, removed: true };
@@ -238,7 +239,7 @@ export function showRoutine(ctx: Context, id: string, count = 5): Detail {
 
 export async function runRoutine(ctx: Context, id: string): Promise<RunRecord> {
   const result = await runNow(ctx.paths, ctx.config, checkId(id));
-  if (result.outcome === "busy" || !result.record) throw new Error(`${id} is already running`);
+  if (result.outcome === "busy" || !result.record) throw locked(`${id} is already running`);
   return result.record;
 }
 

@@ -4,6 +4,7 @@ import { Document, isMap, parseDocument } from "yaml";
 import { checkTimeZone, parseAlertAfter, type Config } from "./config.ts";
 import { parseDuration } from "./duration.ts";
 import { buildSchedule, type Schedule } from "./schedule.ts";
+import { notFound, userError } from "./errors.ts";
 
 export interface Task {
   id: string;
@@ -169,7 +170,7 @@ const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
 export function checkId(id: string): string {
   if (!ID_RE.test(id) || id.split("/").some((part) => part.endsWith(".md"))) {
-    throw new Error(`invalid id ${JSON.stringify(id)}: lowercase letters, digits, '.', '_', '-', segments separated by '/'`);
+    throw userError(`invalid id ${JSON.stringify(id)}: lowercase letters, digits, '.', '_', '-', segments separated by '/'`);
   }
   return id;
 }
@@ -255,7 +256,7 @@ export function parseTask(id: string, file: string, text: string, config: Config
 
 export function readTask(tasksDir: string, id: string, config: Config): Task {
   const file = taskFile(tasksDir, id);
-  if (!existsSync(file)) throw new Error(`no routine ${JSON.stringify(id)}`);
+  if (!existsSync(file)) throw notFound(`no routine ${JSON.stringify(id)}`);
   try {
     return parseTask(id, file, readFileSync(file, "utf8"), config);
   } catch (error) {

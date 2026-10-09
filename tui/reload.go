@@ -53,7 +53,7 @@ const resumeEnv = "ROUTINE_TUI_RESUME"
 
 // idle: no input, no confirmation, no editor open.
 func (m *model) idle() bool {
-	return m.ask == nil && !m.typing && !m.editing
+	return !m.modal.Open() && !m.typing && !m.editing
 }
 
 func (m *model) checkReload() tea.Cmd {
