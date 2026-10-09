@@ -102,6 +102,8 @@ type model struct {
 	sortBy   string
 	sortDesc bool
 	pendingG bool
+	// selectID is the routine asked by --select, applied once the list is loaded.
+	selectID string
 	selID    string
 	saved    savedState
 
@@ -118,6 +120,14 @@ func main() {
 	tuikit.SetLanguage(tuikit.English)
 	m := &model{follow: true}
 	m.restore(loadState())
+	for i, arg := range os.Args[1:] {
+		switch {
+		case arg == "--select" && i+2 < len(os.Args):
+			m.selectID = os.Args[i+2]
+		case strings.HasPrefix(arg, "--select="):
+			m.selectID = strings.TrimPrefix(arg, "--select=")
+		}
+	}
 	if exe, err := os.Executable(); err == nil {
 		m.binPath = exe
 		m.binID, _ = statBinary(exe)
@@ -286,6 +296,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.listErr = msg.err
 		if msg.err == nil {
 			m.list, m.status = msg.list, msg.status
+			m.applySelect()
 		}
 		m.keepSelection()
 	case detailMsg:
@@ -667,4 +678,36 @@ func (m *model) edited(msg editedMsg) tea.Cmd {
 		}
 	}
 	return m.refresh()
+}
+
+// applySelect puts the cursor on the routine named by --select, clearing a filter that hides it.
+func (m *model) applySelect() {
+	if m.selectID == "" {
+		return
+	}
+	id := m.selectID
+	m.selectID = ""
+	m.screen = listScreen
+	for _, r := range m.list.Routines {
+		if r.ID == id {
+			m.selID = id
+			found := false
+			for _, row := range m.rows() {
+				if row.id() == id {
+					found = true
+				}
+			}
+			if !found {
+				m.filter = ""
+			}
+			return
+		}
+	}
+	for _, e := range m.list.Errors {
+		if e.ID == id {
+			m.selID, m.filter = id, ""
+			return
+		}
+	}
+	m.say("no routine "+id, true)
 }

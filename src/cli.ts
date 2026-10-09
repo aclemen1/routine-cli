@@ -468,15 +468,16 @@ const ACTIONS: Action[] = [
   {
     name: "tui",
     category: "meta",
-    summary: "Open the terminal interface.",
-    params: [],
-    examples: ["routine tui"],
+    summary: "Open the terminal interface; --select opens it on one routine, selected and visible.",
+    params: [{ name: "select", type: "string", description: "Routine id to select at start, e.g. office/perso-ingest; an unknown id opens the list with a message." }],
+    examples: ["routine tui", "routine tui --select office/perso-ingest"],
     meta: true,
     streamed: true,
-    run: () => {
+    run: (a) => {
       const binary = join(import.meta.dirname, "..", "tui", "routine-tui");
       if (!existsSync(binary)) throw notFound(`${binary} not found: run npm run build:tui`);
-      const result = spawnSync(binary, [], {
+      const args = typeof a.select === "string" ? ["--select", a.select] : [];
+      const result = spawnSync(binary, args, {
         stdio: "inherit",
         env: { ...process.env, ROUTINE_CLI: JSON.stringify([process.execPath, process.argv[1]!]) },
       });

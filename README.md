@@ -147,7 +147,7 @@ routine check                          # exit 1 when a file is invalid
 routine describe --rrule <RRULE> [--dtstart --tz -n]   # the recurrence in plain English, next occurrences
 routine tick [--foreground] | status | stop | start
 routine schema [<category> [<action>]] # catalog, category, one action's spec
-routine skill [show|install] | version | tui | mcp
+routine skill [show|install] | version | tui [--select <id>] | mcp
 ```
 
 | Exit | Kind | When |

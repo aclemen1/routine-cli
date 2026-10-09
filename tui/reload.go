@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -87,7 +88,18 @@ func (m *model) execReload() error {
 	m.save()
 	b, _ := json.Marshal(resumeState{Screen: m.screen, Detail: m.detailID, LogPath: m.logPath, LogTitle: m.logTitle, LogFrom: m.logFrom})
 	env := append(os.Environ(), resumeEnv+"="+string(b))
-	return syscall.Exec(m.binPath, os.Args, env)
+	// --select applies at the first start only: the reload keeps the current view.
+	args := []string{os.Args[0]}
+	for i := 1; i < len(os.Args); i++ {
+		switch {
+		case os.Args[i] == "--select":
+			i++
+		case strings.HasPrefix(os.Args[i], "--select="):
+		default:
+			args = append(args, os.Args[i])
+		}
+	}
+	return syscall.Exec(m.binPath, args, env)
 }
 
 // resume applies what a reload handed over and says so.
