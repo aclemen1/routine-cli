@@ -79,8 +79,16 @@ type routine struct {
 	LastScheduled string         `json:"lastScheduled,omitempty"`
 	LastRun       *runRecord     `json:"lastRun,omitempty"`
 	// Set by show only.
-	Upcoming []string `json:"upcoming,omitempty"`
-	Body     string   `json:"body,omitempty"`
+	Upcoming []string       `json:"upcoming,omitempty"`
+	Journal  []journalEntry `json:"history,omitempty"`
+	Body     string         `json:"body,omitempty"`
+}
+
+type journalEntry struct {
+	At   string `json:"at"`
+	Type string `json:"type"`
+	Text string `json:"text"`
+	By   string `json:"by,omitempty"`
 }
 
 type invalid struct {

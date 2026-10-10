@@ -469,6 +469,21 @@ func (m *model) renderDetail() []string {
 		}
 		lines = append(lines, selectable(line, i == m.runCur, w))
 	}
+	if len(r.Journal) > 0 {
+		lines = append(lines, "", sAccent.Render("Journal"))
+		for _, e := range r.Journal {
+			style := sText
+			switch e.Type {
+			case "alert":
+				style = sWork
+			case "run":
+				if !strings.HasPrefix(e.Text, "ok") {
+					style = sErr
+				}
+			}
+			lines = append(lines, "  "+sMuted.Render(pad(clock(e.At), 16)+"  "+pad(e.Type, 6))+"  "+style.Render(trunc(clean(e.Text), w-30)))
+		}
+	}
 	if strings.TrimSpace(r.Body) != "" {
 		lines = append(lines, "", sAccent.Render("Body"))
 		for _, l := range strings.Split(strings.TrimRight(r.Body, "\n"), "\n") {

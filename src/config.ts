@@ -15,9 +15,11 @@ export interface Config {
   alertAfter: { failures: number; durationMs: number };
   // Command that records events (logbook): routine appends `add - --source routine:<id> --type … --sphere …`.
   journal?: string[];
+  // Command that lists an object's last journal entries as JSON, with {id}, {sphere} and {limit}.
+  history?: { ls: string[]; limit: number };
 }
 
-const KEYS = new Set(["tz", "timeout", "shell", "env", "retention_days", "on_failure", "alert_after", "journal"]);
+const KEYS = new Set(["tz", "timeout", "shell", "env", "retention_days", "on_failure", "alert_after", "journal", "history"]);
 
 export function defaultConfig(): Config {
   return {
@@ -62,6 +64,15 @@ export function loadConfig(paths: Paths): Config {
       throw new Error(`${paths.configFile}: journal must be a non-empty list of strings, e.g. [logbook]`);
     }
     config.journal = data.journal;
+  }
+  if (data.history !== undefined && data.history !== null) {
+    const h = data.history as { ls?: unknown; limit?: unknown };
+    if (typeof h !== "object" || !Array.isArray(h.ls) || h.ls.length === 0 || !h.ls.every((s) => typeof s === "string")) {
+      throw new Error(`${paths.configFile}: history.ls must be a non-empty list of strings`);
+    }
+    const limit = h.limit === undefined ? 10 : Number(h.limit);
+    if (!Number.isInteger(limit) || limit < 0) throw new Error(`${paths.configFile}: history.limit must be an integer ≥ 0`);
+    config.history = { ls: h.ls as string[], limit };
   }
   if (data.alert_after !== undefined) config.alertAfter = { ...config.alertAfter, ...parseAlertAfter(data.alert_after, paths.configFile) };
   if (data.retention_days !== undefined) {

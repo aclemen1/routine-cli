@@ -7,7 +7,7 @@ import type { Paths } from "./paths.ts";
 import { nextOccurrences } from "./schedule.ts";
 import { lockHolder, lockSince, readJournal, readState, removeState, writeState, type RunRecord } from "./state.ts";
 import { conflict, locked, notFound, userError } from "./errors.ts";
-import { ENGINE_SOURCE, ENGINE_SPHERE, routineEvent, sphereOf, writeEvent } from "./events.ts";
+import { ENGINE_SOURCE, ENGINE_SPHERE, readEvents, routineEvent, sphereOf, writeEvent, type JournalEntry } from "./events.ts";
 import {
   checkId,
   loadTasks,
@@ -81,6 +81,8 @@ export interface Summary {
 export interface Detail extends Summary {
   upcoming: string[];
   body: string;
+  // The last entries of the routine's journal, newest first; absent when there is none.
+  history?: JournalEntry[];
 }
 
 export interface EngineStatus {
@@ -254,11 +256,14 @@ export function listRoutines(ctx: Context, owner?: string): { routines: Summary[
   return { routines: selected.map((t) => summarize(ctx, t, now)), errors: owner === undefined ? errors : [] };
 }
 
-export function showRoutine(ctx: Context, id: string, count = 5): Detail {
+export function showRoutine(ctx: Context, id: string, count = 5, historyLimit?: number): Detail {
   const task = readTask(ctx.paths.tasks, checkId(id), ctx.config);
   const now = Date.now();
   const upcoming = task.active ? nextOccurrences(task.schedule, now, count).map((ms) => new Date(ms).toISOString()) : [];
-  return { ...summarize(ctx, task, now), upcoming, body: task.body };
+  const detail: Detail = { ...summarize(ctx, task, now), upcoming, body: task.body };
+  const history = readEvents(ctx.config, task, historyLimit);
+  if (history.length) detail.history = history;
+  return detail;
 }
 
 export async function runRoutine(ctx: Context, id: string): Promise<RunRecord> {

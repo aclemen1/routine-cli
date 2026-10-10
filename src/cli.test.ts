@@ -159,6 +159,20 @@ test("schema browses the catalog, a category and an action", () => {
   assert.match(cli(dir, "version").stdout, /^routine \d+\.\d+\.\d+\n$/);
 });
 
+test("show adds the last journal entries from the journal command, and hides an empty journal", () => {
+  const dir = setup();
+  const bin = join(dir, "journal.sh");
+  writeFileSync(bin, `#!/bin/sh\n[ "$1" = ls ] && [ "$2" = routine:j ] && [ "$3" = perso ] && [ "$4" = 10 ] && echo '{"ok":true,"result":{"items":[{"at":"2026-10-10T05:00:00Z","type":"run","text":"ok · 2s · scheduled 07:00","by":"routine"}],"count":1}}'\nexit 0\n`);
+  spawnSync("chmod", ["+x", bin]);
+  writeFileSync(join(dir, "config", "config.yaml"), `tz: Europe/Zurich\nshell: [/bin/sh, -c]\nhistory: { ls: [${bin}, ls, "routine:{id}", "{sphere}", "{limit}"] }\n`);
+  call(dir, "add", "j", "--rrule", "FREQ=DAILY", "--run", "true", "--sphere", "perso");
+  assert.deepEqual(call(dir, "show", "j").result.history, [{ at: "2026-10-10T05:00:00Z", type: "run", text: "ok · 2s · scheduled 07:00", by: "routine" }]);
+  assert.match(cli(dir, "show", "j", "--format", "text").stdout, /Journal\n  2026-10-10 07:00  run     ok · 2s · scheduled 07:00/);
+  assert.equal(call(dir, "show", "j", "--history", "0").result.history, undefined);
+  writeFileSync(join(dir, "config", "config.yaml"), "tz: Europe/Zurich\nshell: [/bin/sh, -c]\nhistory: { ls: [/nonexistent] }\n");
+  assert.equal(call(dir, "show", "j").result.history, undefined);
+});
+
 test("skill show prints the embedded skill, install writes it", () => {
   const dir = setup();
   const shown = cli(dir, "skill", "show");

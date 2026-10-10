@@ -118,6 +118,10 @@ function detailText(d: Detail): string {
   if (d.meta) lines.push(`meta:      ${JSON.stringify(d.meta)}`);
   lines.push(`upcoming:  ${d.upcoming.length ? d.upcoming.map((iso) => local(iso, d.tz)).join(", ") : "-"}`);
   lines.push(`last run:  ${d.lastRun ? runLine(d.lastRun, d.tz) : "-"}`);
+  if (d.history?.length) {
+    lines.push("", "Journal");
+    for (const e of d.history) lines.push(`  ${local(e.at, d.tz)}  ${e.type.padEnd(6)}  ${e.text}`);
+  }
   if (d.body) lines.push("", d.body.trimEnd());
   return lines.join("\n");
 }
@@ -241,12 +245,16 @@ const ACTIONS: Action[] = [
     name: "show",
     category: "routine",
     summary: "Show one routine: fields, body, next occurrences, last run.",
-    params: [ID, { name: "n", type: "integer", short: "n", default: 5, description: "Number of next occurrences." }],
+    params: [
+      ID,
+      { name: "n", type: "integer", short: "n", default: 5, description: "Number of next occurrences." },
+      { name: "history", type: "integer", description: "Number of journal entries (default from the config, 10; 0: none)." },
+    ],
     examples: ["routine show self-sync --format text"],
     run: (a) => {
       const n = a.n as number;
       if (n < 0) throw userError("-n expects an integer ≥ 0");
-      return { result: showRoutine(env().ctx, id(a), n) };
+      return { result: showRoutine(env().ctx, id(a), n, a.history as number | undefined) };
     },
     text: detailText,
   },

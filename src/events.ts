@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import type { Config } from "./config.ts";
 import { formatDuration } from "./duration.ts";
@@ -104,4 +104,28 @@ export function firstErrorLine(log: string): string | undefined {
   const lines = text.split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("[notify]") && !l.startsWith("==="));
   const line = lines.find((l) => /error|fail|denied|not found|no such|refus/i.test(l)) ?? lines.at(-1);
   return line ? line.slice(0, 200) : undefined;
+}
+
+export interface JournalEntry {
+  at: string;
+  type: string;
+  text: string;
+  by?: string;
+}
+
+// The last entries of a routine's journal (config history.ls, JSON envelope with items),
+// newest first; empty when there is none or the read fails.
+export function readEvents(config: Config, task: { id: string; sphere?: string; owner?: string }, limit = config.history?.limit ?? 10): JournalEntry[] {
+  const ls = config.history?.ls;
+  if (!ls?.length || limit < 1) return [];
+  const vars: Record<string, string> = { id: task.id, sphere: sphereOf(task) ?? "", limit: String(limit) };
+  const argv = ls.map((a) => a.replace(/\{(id|sphere|limit)\}/g, (_, k: string) => vars[k]!));
+  const r = spawnSync(argv[0]!, argv.slice(1), { encoding: "utf8", timeout: 3000, env: { ...process.env, ...config.env } });
+  if (r.status !== 0 || !r.stdout) return [];
+  try {
+    const env = JSON.parse(r.stdout) as { result?: { items?: JournalEntry[] } };
+    return (env.result?.items ?? []).map(({ at, type, text, by }) => ({ at, type, text, ...(by ? { by } : {}) }));
+  } catch {
+    return [];
+  }
 }
