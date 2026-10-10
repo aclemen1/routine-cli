@@ -169,6 +169,9 @@ func (m *model) header() string {
 			parts = append(parts, sErr.Bold(true).Render("KILL SWITCH ON: nothing runs"))
 		}
 	}
+	if b := m.busy.View(); b != "" {
+		parts = append(parts, b)
+	}
 	if m.newVersion {
 		parts = append(parts, sWork.Bold(true).Render("new version: reloads when idle"))
 	}
@@ -209,6 +212,9 @@ func (m *model) footer() []string {
 	default:
 		keys = "j/k scroll · J/K page · gg top · G follow · esc/h back · q quit"
 	}
+	if m.busy.Unread() > 0 {
+		keys = tuikit.BusyKey + " failed job · " + keys
+	}
 	return append(lines, sMuted.Render(trunc(keys, m.width)))
 }
 
@@ -216,7 +222,7 @@ func legend() []string {
 	return []string{
 		"j/k ↓/↑  move   gg/G  top, bottom   enter/l  open   esc/h  back   J/K  scroll the detail   r  reload   q  quit",
 		"c  new routine (form)   E  edit (form; the file in $EDITOR for steps)   R  run now   space  pause or resume   e/x/p  pause   u  resume",
-		"L  log of the last run   o  the run's ACP session (herdr tab)   #  delete, after typing the id",
+		"L  log of the last run   o  the run's ACP session (herdr tab)   #  delete, after typing the id   !  background jobs",
 		"t  sort by id, next, last run, state, owner   T  reverse   /  filter by id, owner, description   X  kill switch   ?  hide",
 	}
 }

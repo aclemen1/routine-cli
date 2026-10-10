@@ -30,19 +30,19 @@ func (m *model) modalDone(msg tuikit.DoneMsg) tea.Cmd {
 func (m *model) confirmDelete(id string) {
 	m.openModal("Delete "+id, tuikit.NewConfirmTyped("delete", "Type the id to delete "+id+" and its schedule state.", id), func(tuikit.Values) tea.Cmd {
 		m.screen = listScreen
-		return action(id+": deleted", "rm", id)
+		return m.action("delete "+id, id+": deleted", "rm", id)
 	})
 }
 
 func (m *model) killSwitch() tea.Cmd {
 	if m.status.Stopped {
 		m.openModal("Kill switch", tuikit.NewConfirm("start", "Restart the schedule? Routines run again on schedule."), func(tuikit.Values) tea.Cmd {
-			return action("schedule restarted", "start")
+			return m.action("restart the schedule", "schedule restarted", "start")
 		})
 		return nil
 	}
 	m.openModal("Kill switch", tuikit.NewConfirm("stop", "Stop every routine? Nothing runs until X again; running ones finish."), func(tuikit.Values) tea.Cmd {
-		return action("kill switch on: nothing runs", "stop")
+		return m.action("stop every routine", "kill switch on: nothing runs", "stop")
 	})
 	return nil
 }
@@ -231,7 +231,7 @@ func (m *model) openRoutineForm(r *routine) {
 			verb, done = "Save", id+": saved"
 		}
 		m.openModal(verb+" "+id, tuikit.NewConfirm("save", verb+" "+id+": "+m.preview+"?").Default(true), func(tuikit.Values) tea.Cmd {
-			return action(done+" · "+m.preview, args...)
+			return m.action(strings.ToLower(verb)+" "+id, done+" · "+m.preview, args...)
 		})
 		return nil
 	})
@@ -296,13 +296,15 @@ func compactDuration(d time.Duration) string {
 	return out
 }
 
-// openEditForm loads the routine's body (show) before opening its form.
+// openEditForm loads the routine's body (show), as a background job, before
+// opening its form (editLoaded).
 func (m *model) openEditForm(r *routine) tea.Cmd {
-	var full routine
-	if err := call(&full, "show", r.ID, "-n", "0"); err != nil {
-		m.say(err.Error(), true)
-		return nil
-	}
-	m.openRoutineForm(&full)
-	return nil
+	id := r.ID
+	return m.busy.Wrap("load "+id+" for editing", func() tea.Msg {
+		var full routine
+		if err := call(&full, "show", id, "-n", "0"); err != nil {
+			return err
+		}
+		return editLoaded{full}
+	})
 }

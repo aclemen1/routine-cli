@@ -5,7 +5,7 @@ go 1.26.5
 require (
 	charm.land/bubbletea/v2 v2.0.10
 	charm.land/lipgloss/v2 v2.0.6
-	github.com/aclemen1/tuikit v0.4.0
+	github.com/aclemen1/tuikit v0.7.0
 )
 
 require (

@@ -26,22 +26,35 @@ type listMsg struct {
 	err    error
 }
 
+// listFailed is a failed reading of the list; an error, so that tuikit.Busy
+// counts it as a failure when the reading is wrapped.
+type listFailed struct{ err error }
+
+func (f listFailed) Error() string { return f.err.Error() }
+
 type detailMsg struct {
 	id      string
 	routine routine
 	runs    []runRecord
-	err     error
 }
+
+// detailFailed is a failed reading of a routine. shown: tuikit.Busy shows it
+// already; a silent refresh says it in the footer.
+type detailFailed struct {
+	id    string
+	err   error
+	shown bool
+}
+
+func (f detailFailed) Error() string { return f.err.Error() }
+
+// editLoaded is a routine read in full for its form.
+type editLoaded struct{ r routine }
 
 type logMsg struct {
 	path    string
 	content string
 	err     error
-}
-
-type doneMsg struct {
-	text string
-	err  error
 }
 
 type tickMsg time.Time
@@ -109,6 +122,7 @@ type model struct {
 
 	modal     *tuikit.Modal
 	onDone    func(tuikit.Values) tea.Cmd
+	busy      *tuikit.Busy
 	preview   string
 	legend    bool
 	msg       string
@@ -118,7 +132,7 @@ type model struct {
 
 func main() {
 	tuikit.SetLanguage(tuikit.English)
-	m := &model{follow: true}
+	m := &model{follow: true, busy: tuikit.NewBusy()}
 	m.restore(loadState())
 	for i, arg := range os.Args[1:] {
 		switch {
@@ -151,18 +165,32 @@ func tick() tea.Cmd {
 }
 
 func (m *model) Init() tea.Cmd {
-	return tea.Batch(fetchList, tick(), spin(time.Second), checkBinary(), m.resume(), tea.RequestBackgroundColor)
+	return tea.Batch(m.busy.Wrap("load routines", fetchList), tick(), spin(time.Second), checkBinary(), m.resume(), tea.RequestBackgroundColor)
 }
 
 func fetchList() tea.Msg {
 	l, s, err := loadList()
-	return listMsg{l, s, err}
+	if err != nil {
+		return listFailed{err}
+	}
+	return listMsg{l, s, nil}
 }
 
-func fetchDetail(id string) tea.Cmd {
+// fetchDetail reads a routine and its runs, silently.
+func fetchDetail(id string) tea.Cmd { return detailCmd(id, false) }
+
+// showDetail reads a routine and its runs as a background job.
+func (m *model) showDetail(id string) tea.Cmd {
+	return m.busy.Wrap("show "+id, detailCmd(id, true))
+}
+
+func detailCmd(id string, shown bool) tea.Cmd {
 	return func() tea.Msg {
 		r, runs, err := loadDetail(id)
-		return detailMsg{id, r, runs, err}
+		if err != nil {
+			return detailFailed{id, err, shown}
+		}
+		return detailMsg{id, r, runs}
 	}
 }
 
@@ -173,14 +201,20 @@ func fetchLog(path string) tea.Cmd {
 	}
 }
 
-func action(text string, args ...string) tea.Cmd {
-	return func() tea.Msg {
-		return doneMsg{text, call(nil, args...)}
-	}
+// action runs `routine <args>` as a background job under label, done being
+// its end, then reads the list again.
+func (m *model) action(label, done string, args ...string) tea.Cmd {
+	job := m.busy.Run(label, func() (string, error) { return done, call(nil, args...) })
+	return tea.Sequence(job, m.refresh())
 }
 
-func (m *model) refresh() tea.Cmd {
-	cmds := []tea.Cmd{fetchList}
+func (m *model) refresh() tea.Cmd { return m.refreshWith(fetchList) }
+
+// reload is r: the list read again as a background job.
+func (m *model) reload() tea.Cmd { return m.refreshWith(m.busy.Wrap("reload", fetchList)) }
+
+func (m *model) refreshWith(list tea.Cmd) tea.Cmd {
+	cmds := []tea.Cmd{list}
 	if m.screen != listScreen && m.detailID != "" {
 		cmds = append(cmds, fetchDetail(m.detailID))
 	}
@@ -261,6 +295,9 @@ func (m *model) keepSelection() {
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if cmd, ok := m.busy.Update(msg); ok {
+		return m, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -299,15 +336,26 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.applySelect()
 		}
 		m.keepSelection()
-	case detailMsg:
+	case listFailed:
+		m.loaded = true
+		m.listErr = msg.err
+		m.keepSelection()
+	case detailFailed:
 		if msg.id != m.detailID {
 			break
 		}
-		if msg.err != nil {
+		if !msg.shown {
 			m.say(msg.err.Error(), true)
-			if m.screen == detailScreen {
-				m.screen = listScreen
-			}
+		}
+		if m.screen == detailScreen {
+			m.screen = listScreen
+		}
+	case editLoaded:
+		if !m.modal.Open() {
+			m.openRoutineForm(&msg.r)
+		}
+	case detailMsg:
+		if msg.id != m.detailID {
 			break
 		}
 		m.detail, m.runs = &msg.routine, msg.runs
@@ -326,13 +374,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.logText = msg.content
 		}
-	case doneMsg:
-		if msg.err != nil {
-			m.say(msg.err.Error(), true)
-		} else {
-			m.say(msg.text, false)
-		}
-		return m, m.refresh()
 	case editedMsg:
 		m.editing = false
 		cmd := m.edited(msg)
@@ -414,7 +455,10 @@ func (m *model) key(k tea.KeyPressMsg) tea.Cmd {
 		return nil
 	case "r":
 		m.say("", false)
-		return m.refresh()
+		return m.reload()
+	case tuikit.BusyKey:
+		m.openModal("Jobs", m.busy.List(), nil)
+		return nil
 	case "X":
 		return m.killSwitch()
 	}
@@ -486,7 +530,7 @@ func (m *model) listKey(k string) tea.Cmd {
 
 func (m *model) openDetail(id string) tea.Cmd {
 	m.screen, m.detailID, m.detail, m.runs, m.runCur, m.scrollDet = detailScreen, id, nil, nil, 0, 0
-	return fetchDetail(id)
+	return m.showDetail(id)
 }
 
 func (m *model) detailKey(k string) tea.Cmd {
@@ -529,32 +573,28 @@ func (m *model) routineKey(k, id, file string, r *routine) tea.Cmd {
 			m.say(id+" is already running", true)
 			return nil
 		}
-		if err := startRun(id); err != nil {
-			m.say(err.Error(), true)
-			return nil
-		}
-		m.say(id+": started", false)
-		return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
+		job := m.busy.Run("run "+id, func() (string, error) { return id + ": started", startRun(id) })
+		return tea.Sequence(job, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) }))
 	case " ", "space":
 		if r == nil {
 			return nil
 		}
 		if r.Active {
-			return action(id+": paused", "pause", id)
+			return m.action("pause "+id, id+": paused", "pause", id)
 		}
-		return action(id+": resumed, missed occurrences are not caught up", "resume", id)
+		return m.action("resume "+id, id+": resumed, missed occurrences are not caught up", "resume", id)
 	case "p", "e", "x":
 		if r != nil && !r.Active {
 			m.say(id+" is already paused", true)
 			return nil
 		}
-		return action(id+": paused", "pause", id)
+		return m.action("pause "+id, id+": paused", "pause", id)
 	case "u":
 		if r != nil && r.Active {
 			m.say(id+" is already active", true)
 			return nil
 		}
-		return action(id+": resumed, missed occurrences are not caught up", "resume", id)
+		return m.action("resume "+id, id+": resumed, missed occurrences are not caught up", "resume", id)
 	case "E":
 		if r != nil {
 			ok, why := formable(r)
@@ -592,12 +632,12 @@ func (m *model) routineKey(k, id, file string, r *routine) tea.Cmd {
 			m.say(err.Error(), true)
 			return nil
 		}
-		return func() tea.Msg {
+		return m.busy.Run("focus herdr tab "+tab, func() (string, error) {
 			if err := focusTab(tab); err != nil {
-				return doneMsg{err: fmt.Errorf("herdr tab focus %s: %w", tab, err)}
+				return "", fmt.Errorf("herdr tab focus %s: %w", tab, err)
 			}
-			return doneMsg{text: "session " + short(session) + " is in herdr tab " + tab}
-		}
+			return "session " + short(session) + " is in herdr tab " + tab, nil
+		})
 	}
 	return nil
 }
@@ -665,19 +705,22 @@ func (m *model) edited(msg editedMsg) tea.Cmd {
 		m.say("editor: "+msg.err.Error(), true)
 		return m.refresh()
 	}
-	var check struct {
-		Errors []invalid `json:"errors"`
-	}
-	// check exits 1 when a file is invalid; its JSON is still on stdout.
-	m.say(msg.id+": saved and valid", false)
-	if call(&check, "check") == nil {
-		for _, e := range check.Errors {
-			if e.ID == msg.id {
-				m.say(msg.id+" is invalid: "+e.Error, true)
+	id := msg.id
+	job := m.busy.Run("check "+id, func() (string, error) {
+		var check struct {
+			Errors []invalid `json:"errors"`
+		}
+		// check exits 1 when a file is invalid; its JSON is still on stdout.
+		if call(&check, "check") == nil {
+			for _, e := range check.Errors {
+				if e.ID == id {
+					return "", fmt.Errorf("%s is invalid: %s", id, e.Error)
+				}
 			}
 		}
-	}
-	return m.refresh()
+		return id + ": saved and valid", nil
+	})
+	return tea.Sequence(job, m.refresh())
 }
 
 // applySelect puts the cursor on the routine named by --select, clearing a filter that hides it.
