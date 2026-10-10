@@ -13,9 +13,11 @@ export interface Config {
   onFailure?: string;
   // on_failure fires after this many failed runs in a row, or after this long failing.
   alertAfter: { failures: number; durationMs: number };
+  // Command that records events (logbook): routine appends `add - --source routine:<id> --type … --sphere …`.
+  journal?: string[];
 }
 
-const KEYS = new Set(["tz", "timeout", "shell", "env", "retention_days", "on_failure", "alert_after"]);
+const KEYS = new Set(["tz", "timeout", "shell", "env", "retention_days", "on_failure", "alert_after", "journal"]);
 
 export function defaultConfig(): Config {
   return {
@@ -54,6 +56,12 @@ export function loadConfig(paths: Paths): Config {
   if (data.on_failure !== undefined && data.on_failure !== null) {
     if (typeof data.on_failure !== "string" || !data.on_failure.trim()) throw new Error(`${paths.configFile}: on_failure must be a command`);
     config.onFailure = data.on_failure;
+  }
+  if (data.journal !== undefined && data.journal !== null) {
+    if (!Array.isArray(data.journal) || data.journal.length === 0 || !data.journal.every((s) => typeof s === "string")) {
+      throw new Error(`${paths.configFile}: journal must be a non-empty list of strings, e.g. [logbook]`);
+    }
+    config.journal = data.journal;
   }
   if (data.alert_after !== undefined) config.alertAfter = { ...config.alertAfter, ...parseAlertAfter(data.alert_after, paths.configFile) };
   if (data.retention_days !== undefined) {

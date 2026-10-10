@@ -109,6 +109,7 @@ function detailText(d: Detail): string {
   lines.push(`timeout:   ${d.timeout}`);
   if (d.cwd) lines.push(`cwd:       ${d.cwd}`);
   if (d.owner) lines.push(`owner:     ${d.owner}`);
+  if (d.sphere) lines.push(`sphere:    ${d.sphere}`);
   if (d.onFailure) lines.push(`on fail:   ${d.onFailure}`);
   if (d.alertAfter) {
     const a = d.alertAfter;
@@ -136,6 +137,7 @@ const ID: Param = { name: "id", type: "string", positional: true, required: true
 
 const FIELDS: Param[] = [
   { name: "description", type: "string", description: "What the routine does, in one sentence; empty removes it." },
+  { name: "sphere", type: "string", description: "Sphere of the routine's journal events: perso or pro (default: the office of its owner); empty removes it." },
   { name: "rrule", type: "string[]", description: 'RRULE without DTSTART, e.g. "FREQ=DAILY;BYHOUR=7;BYMINUTE=0"; repeat for several rules.' },
   { name: "dtstart", type: "string", description: "Local start of the series, e.g. 2026-10-05T07:00." },
   { name: "tz", type: "string", description: "Time zone, e.g. Europe/Zurich (default from the config)." },
@@ -173,7 +175,7 @@ function routineInput(a: Record<string, unknown>, current?: RoutineInput["acp"])
   const input: RoutineInput = {};
   const str = (key: string) => a[key] as string | undefined;
   if (Array.isArray(a.rrule)) input.rrule = a.rrule as string[];
-  for (const key of ["description", "dtstart", "tz", "cwd", "timeout", "owner"] as const) {
+  for (const key of ["description", "sphere", "dtstart", "tz", "cwd", "timeout", "owner"] as const) {
     const value = str(key);
     if (value !== undefined) input[key] = value === "" ? null : value;
   }
@@ -258,12 +260,12 @@ const ACTIONS: Action[] = [
       'routine add backup --description "Back up the vault" --rrule "FREQ=DAILY;BYHOUR=2;BYMINUTE=0" --run "restic backup ~/vault"',
       'routine add brief --rrule "FREQ=DAILY;BYHOUR=7;BYMINUTE=0" --acp-command herdr-acp --acp-arg=--workspace --acp-arg routine --body-file prompt.md',
     ],
-    run: (a) => {
+    run: async (a) => {
       const input = routineInput(a);
       if (!input.rrule || (input.run === undefined && input.acp === undefined && input.steps === undefined)) {
         throw userError(`add needs --rrule and one of --run, --acp-command or --steps. Usage: ${usage(ACTIONS[2]!)}`);
       }
-      return { result: addRoutine(env().ctx, id(a), input, a.paused === true) };
+      return { result: await addRoutine(env().ctx, id(a), input, a.paused === true) };
     },
     text: (s: Summary) => `added ${s.id} (${s.file})`,
   },
@@ -273,10 +275,10 @@ const ACTIONS: Action[] = [
     summary: "Change fields of a routine; an empty value removes an optional field; run, acp and steps replace one another. Only after the user agreed.",
     params: [ID, ...FIELDS],
     examples: ['routine edit self-sync --timeout 20m', 'routine edit brief --description ""'],
-    run: (a) => {
+    run: async (a) => {
       const { paths, config, ctx } = env();
       const current = readTask(paths.tasks, id(a), config).acp;
-      return { result: editRoutine(ctx, id(a), routineInput(a, current)) };
+      return { result: await editRoutine(ctx, id(a), routineInput(a, current)) };
     },
     text: (s: Summary) => `updated ${s.id}`,
   },
@@ -286,7 +288,7 @@ const ACTIONS: Action[] = [
     summary: "Pause a routine; `routine run` still works.",
     params: [ID],
     examples: ["routine pause self-sync"],
-    run: (a) => ({ result: setActive(env().ctx, id(a), false) }),
+    run: async (a) => ({ result: await setActive(env().ctx, id(a), false) }),
     text: (s: Summary) => `paused ${s.id}`,
   },
   {
@@ -295,7 +297,7 @@ const ACTIONS: Action[] = [
     summary: "Resume a paused routine; occurrences missed while paused are not caught up.",
     params: [ID],
     examples: ["routine resume self-sync"],
-    run: (a) => ({ result: setActive(env().ctx, id(a), true) }),
+    run: async (a) => ({ result: await setActive(env().ctx, id(a), true) }),
     text: (s: Summary) => `resumed ${s.id}`,
   },
   {
@@ -304,7 +306,7 @@ const ACTIONS: Action[] = [
     summary: "Delete a routine and its schedule state. Only after the user agreed.",
     params: [ID],
     examples: ["routine rm old-backup"],
-    run: (a) => ({ result: removeRoutine(env().ctx, id(a)) }),
+    run: async (a) => ({ result: await removeRoutine(env().ctx, id(a)) }),
     text: (r: { id: string }) => `removed ${r.id}`,
   },
   {
@@ -345,7 +347,8 @@ const ACTIONS: Action[] = [
       const result = checkRoutines(env().ctx);
       return { result, exitCode: result.errors.length ? 1 : 0 };
     },
-    text: (r: { valid: string[]; errors: TaskError[] }) => [`${r.valid.length} valid routine(s)`, ...r.errors.map((e) => `invalid ${e.id}: ${e.error}`)].join("\n"),
+    text: (r: { valid: string[]; errors: TaskError[]; warnings: { id: string; warning: string }[] }) =>
+      [`${r.valid.length} valid routine(s)`, ...r.errors.map((e) => `invalid ${e.id}: ${e.error}`), ...r.warnings.map((w) => `warning ${w.id}: ${w.warning}`)].join("\n"),
   },
   {
     name: "describe",
@@ -395,7 +398,7 @@ const ACTIONS: Action[] = [
     summary: "Turn on the kill switch: no routine runs until `routine start`; running ones finish.",
     params: [],
     examples: ["routine stop"],
-    run: () => ({ result: setStopped(env().ctx, true) }),
+    run: async () => ({ result: await setStopped(env().ctx, true) }),
     text: statusText,
   },
   {
@@ -404,7 +407,7 @@ const ACTIONS: Action[] = [
     summary: "Turn off the kill switch.",
     params: [],
     examples: ["routine start"],
-    run: () => ({ result: setStopped(env().ctx, false) }),
+    run: async () => ({ result: await setStopped(env().ctx, false) }),
     text: statusText,
   },
   {

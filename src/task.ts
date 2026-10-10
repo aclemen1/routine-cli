@@ -15,6 +15,8 @@ export interface Task {
   active: boolean;
   owner?: string;
   description?: string;
+  // Sphere of the routine's events (perso, pro); else the office of its owner.
+  sphere?: string;
   // Overrides the config's on_failure; "none" turns notifications off.
   onFailure?: string;
   alertAfter?: Partial<{ failures: number; durationMs: number }>;
@@ -162,7 +164,7 @@ export interface TaskError {
   error: string;
 }
 
-export const FIELDS = ["description", "rrule", "dtstart", "tz", "run", "acp", "close", "permissions", "steps", "cwd", "timeout", "owner", "on_failure", "alert_after", "meta", "active"] as const;
+export const FIELDS = ["description", "sphere", "rrule", "dtstart", "tz", "run", "acp", "close", "permissions", "steps", "cwd", "timeout", "owner", "on_failure", "alert_after", "meta", "active"] as const;
 export type Field = (typeof FIELDS)[number];
 const FIELD_SET = new Set<string>(FIELDS);
 const ID_RE = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/;
@@ -242,6 +244,11 @@ export function parseTask(id: string, file: string, text: string, config: Config
   if (steps) task.steps = steps;
   if (fm.meta) task.meta = fm.meta as Record<string, unknown>;
   if (dtstart !== undefined) task.dtstart = dtstart;
+  const sphere = str("sphere");
+  if (sphere !== undefined && sphere.trim()) {
+    if (!/^[a-z][a-z0-9-]*$/.test(sphere)) throw new Error("sphere must be a lower-case word, e.g. perso or pro");
+    task.sphere = sphere;
+  }
   const description = str("description");
   if (description !== undefined && description.trim()) task.description = description.trim();
   if (fm.alert_after !== undefined && fm.alert_after !== null) task.alertAfter = parseAlertAfter(fm.alert_after, "alert_after");

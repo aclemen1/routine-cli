@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import type { Config } from "./config.ts";
 import type { RunRecord } from "./state.ts";
 import type { Task } from "./task.ts";
+import { routineEvent } from "./events.ts";
 
 const NOTIFY_TIMEOUT_MS = 60_000;
 const TAIL_LINES = 12;
@@ -125,7 +126,9 @@ export async function notify(task: Task, config: Config, record: RunRecord, even
     child.on("close", (code) => {
       clearTimeout(timer);
       note(`${event}: ${code === 0 ? "sent" : `on_failure exited ${code}`}${output.trim() ? ` · ${output.trim().split("\n").at(-1)}` : ""}`);
-      resolve(code === 0);
+      if (code === 0 && event === "failed") {
+        void routineEvent(config, task, "alert", `alert sent: ${record.status}, ${alert.failStreak ?? 1} failed run(s)`).finally(() => resolve(true));
+      } else resolve(code === 0);
     });
   });
 }

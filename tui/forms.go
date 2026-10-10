@@ -87,6 +87,10 @@ func routineForm(r *routine) *tuikit.Form {
 		every = "rrule"
 	}
 	desc := tuikit.Text("description", "Description").Help("what the routine does, in one sentence")
+	sphere := tuikit.Choice("sphere", "Sphere", "perso", "pro").Required().Default("perso").Help("where its runs are journaled")
+	if r != nil && r.Sphere != "" {
+		sphere.Default(r.Sphere)
+	}
 	kindField := tuikit.Choice("kind", "Type", "command", "agent").Required().Default(kind)
 	runField := tuikit.TextArea("run", "Command").ShowIf("kind", "command").Required().Help("shell command, run in /bin/zsh -lc")
 	promptField := tuikit.TextArea("prompt", "Prompt").ShowIf("kind", "agent").Required()
@@ -100,7 +104,7 @@ func routineForm(r *routine) *tuikit.Form {
 			promptField.Default(strings.TrimRight(prompt, "\n"))
 		}
 	}
-	fields = append(fields, desc, kindField, runField, promptField, acpField,
+	fields = append(fields, desc, sphere, kindField, runField, promptField, acpField,
 		tuikit.Choice("every", "Recurrence", everyKeys...).Required().Default(every).
 			Help("minutes: every N minutes · day, weekdays, week: at a time · once · rrule: any RRULE"),
 		tuikit.Text("interval", "Every (minutes)").ShowIf("every", "minutes").Required().Default("30"),
@@ -250,7 +254,7 @@ func routineArgs(v tuikit.Values, r *routine) ([]string, string, error) {
 		id = r.ID
 		args = []string{"edit", id}
 	}
-	args = append(args, "--description", strings.TrimSpace(v.String("description")), "--rrule", rule, "--dtstart", dtstart, "--cwd", strings.TrimSpace(v.String("cwd")))
+	args = append(args, "--description", strings.TrimSpace(v.String("description")), "--sphere", v.String("sphere"), "--rrule", rule, "--dtstart", dtstart, "--cwd", strings.TrimSpace(v.String("cwd")))
 	// The timeout is sent only when it changed: an untouched default stays the config's.
 	var before time.Duration
 	if r != nil {

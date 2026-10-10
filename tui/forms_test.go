@@ -43,11 +43,11 @@ func TestSchedule(t *testing.T) {
 
 func TestRoutineArgs(t *testing.T) {
 	v := values(map[string]string{
-		"id": "brief", "description": "Morning brief", "kind": "agent", "acp": "herdr-acp --workspace routine",
+		"id": "brief", "description": "Morning brief", "sphere": "perso", "kind": "agent", "acp": "herdr-acp --workspace routine",
 		"prompt": "Prepare the brief.", "every": "day", "at": "07:00", "cwd": "~/offices",
 	})
 	args, id, err := routineArgs(v, nil)
-	want := []string{"add", "brief", "--description", "Morning brief", "--rrule", "FREQ=DAILY;BYHOUR=7;BYMINUTE=0", "--dtstart", "", "--cwd", "~/offices",
+	want := []string{"add", "brief", "--description", "Morning brief", "--sphere", "perso", "--rrule", "FREQ=DAILY;BYHOUR=7;BYMINUTE=0", "--dtstart", "", "--cwd", "~/offices",
 		"--acp-command", "herdr-acp", "--acp-arg=--workspace", "--acp-arg=routine", "--body", "Prepare the brief."}
 	if err != nil || id != "brief" || !reflect.DeepEqual(args, want) {
 		t.Fatalf("got %q %q %v", args, id, err)

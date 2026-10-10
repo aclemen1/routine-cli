@@ -46,7 +46,8 @@ routine pause <id> | resume <id> | rm <id>
 routine run <id>                           # now, outside the schedule
 ```
 
-- Every routine gets a `--description`.
+- Every routine gets a `--description` and a `--sphere` (`perso` or `pro`, for its journal), unless an `office:` owner gives the sphere.
+- A routine that runs more often than hourly needs a rule in logbook's config that drops its `ok` runs: report it to LOGBOOK-CLI (P-0059).
 - id: lowercase letters, digits, `.`, `_`, `-`; `/` separates segments.
 - `run`, `acp` and `steps` replace one another.
 - An argument that starts with `-` is written `--acp-arg=--flag`.
@@ -107,6 +108,7 @@ A missing `BYHOUR` or `BYMINUTE` takes the hour or minute of `dtstart` (default 
 | one run's output | `~/.local/state/routine/runs/<id>/<time>.log`; `routine log <id>` gives the path |
 | steps' outputs | `~/.local/state/routine/runs/<id>/<time>.d/` |
 | every run | `~/.local/state/routine/journal.jsonl` |
+| readable history | `logbook ls --source routine:<id> --limit 20` (types run, alert, state, change; kill switch: `routine:engine`) |
 | the ticks | `~/Library/Logs/routine.log` |
 
 Statuses: `ok`, `failed` (exit ≠ 0, or the turn did not end with `end_turn`), `timeout`, `error` (could not start); a step may be `skipped`.

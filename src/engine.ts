@@ -3,6 +3,7 @@ import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Config } from "./config.ts";
 import { runTask } from "./execute.ts";
+import { firstErrorLine, routineEvent, runEvent } from "./events.ts";
 import { handleAlert } from "./notify.ts";
 import type { Paths } from "./paths.ts";
 import { dueOccurrence, nextOccurrences } from "./schedule.ts";
@@ -56,6 +57,7 @@ export async function execScheduled(paths: Paths, config: Config, id: string, no
     const record = await runTask(task, config, paths, { scheduled });
     const latest = readState(paths, id) ?? state;
     appendJournal(paths, record);
+    await runEvent(config, task, record, record.status === "ok" ? undefined : firstErrorLine(record.log));
     const alert = await alertAfterRun(task, config, latest, record);
     writeState(paths, id, { ...withoutAlert(latest), lastScheduled: scheduled, lastRun: record, ...alert });
     return { id, outcome: "ran", record };
@@ -73,6 +75,7 @@ export async function runNow(paths: Paths, config: Config, id: string): Promise<
     const record = await runTask(task, config, paths, { manual: true });
     const state = readState(paths, id) ?? syncState(task, undefined, Date.parse(record.started));
     appendJournal(paths, record);
+    await runEvent(config, task, record, record.status === "ok" ? undefined : firstErrorLine(record.log));
     const alert = await alertAfterRun(task, config, state, record);
     writeState(paths, id, { ...withoutAlert(state), lastRun: record, ...alert });
     return { id, outcome: "ran", record };
@@ -89,6 +92,11 @@ function withoutAlert(state: TaskState): TaskState {
 
 async function alertAfterRun(task: Task, config: Config, state: TaskState, record: RunRecord) {
   const nowMs = Date.now();
+  // The journal drops the ok runs of frequent routines: a recovery is written as an alert too.
+  if (record.status === "ok" && state.failStreak) {
+    const n = state.failStreak;
+    await routineEvent(config, task, "alert", `ok again after ${n} failed run${n > 1 ? "s" : ""}${state.alerted ? ", recovery sent" : ""}`, record.ended);
+  }
   const [next] = task.active ? nextOccurrences(task.schedule, nowMs, 1) : [];
   return handleAlert(task, config, state, record, nowMs, next ?? null);
 }

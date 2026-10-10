@@ -61,6 +61,7 @@ type routine struct {
 	File          string         `json:"file"`
 	Owner         string         `json:"owner,omitempty"`
 	Description   string         `json:"description,omitempty"`
+	Sphere        string         `json:"sphere,omitempty"`
 	Active        bool           `json:"active"`
 	Running       bool           `json:"running"`
 	RunningSince  string         `json:"runningSince,omitempty"`

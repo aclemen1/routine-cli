@@ -33,6 +33,7 @@ const acp = z
 
 const fields = {
   description: z.string().describe("What the routine does, in one sentence"),
+  sphere: z.string().describe("Sphere of the routine's journal events: perso or pro (default: the office of its owner)"),
   alert_after: z
     .object({ failures: z.number().int().min(1).optional(), duration: z.string().optional() })
     .describe("Alert after this many failed runs in a row, or after failing this long, e.g. {failures: 3, duration: '30m'}; default from the config"),

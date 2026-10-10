@@ -32,6 +32,7 @@ Text passed on stdin.
 | Field | Meaning | Default |
 |---|---|---|
 | `description` | What the routine does, in one sentence; written first in the file | none |
+| `sphere` | Sphere of its journal events (`perso`, `pro`) | the office of an `office:<office>…` owner |
 | `rrule` | RRULE value without `DTSTART`, or a list of them | required |
 | `dtstart` | Local start of the series, e.g. `2026-10-05T07:00` | `2026-01-01T00:00` |
 | `tz` | Time zone of `dtstart` and the rule | config `tz` |
@@ -117,7 +118,10 @@ env: { }
 retention_days: 14
 on_failure: office tell desk --file /dev/stdin   # optional
 alert_after: { failures: 3, duration: 30m }
+journal: [logbook]                              # optional
 ```
+
+`journal` names the command that records events. routine runs `<journal> add - --source routine:<id> --type <type> --sphere <sphere> --by routine --at <time> [--ref office:<dossier>]` with the text on stdin; a failed write never holds a run back. Types: `run` ("ok · 24s · scheduled 07:00", "failed exit 1 · 1m02s · manual · <first error line>"), `alert` (alert sent, ok again after failures), `state` (paused, resumed; the kill switch under `routine:engine`), `change` (created, edited, removed). A routine with no sphere writes nothing; `routine check` warns about it.
 
 `on_failure` runs once when a failing routine crosses `alert_after`: that many failed runs in a row, or that long failing, or at its first failure when its next run comes later than that (a daily routine alerts at once, one that runs every 5 minutes after 15 minutes). It runs again when the routine is `ok`, only if the alert went out; an alert that could not be sent is tried again on the next failed run. It gets the message on stdin (id, status, error, failed runs, description, log path, last lines of the log) and `ROUTINE_ID`, `ROUTINE_EVENT` (`failed` or `recovered`), `ROUTINE_STATUS`, `ROUTINE_LOG`, `ROUTINE_ERROR`. Its outcome is written at the end of the run log; it never changes the run's status.
 
