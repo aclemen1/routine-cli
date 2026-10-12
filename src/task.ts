@@ -4,6 +4,7 @@ import { Document, isMap, parseDocument } from "yaml";
 import { checkTimeZone, parseAlertAfter, type Config } from "./config.ts";
 import { parseDuration } from "./duration.ts";
 import { buildSchedule, type Schedule } from "./schedule.ts";
+import { checkActor } from "./actor.ts";
 import { notFound, userError } from "./errors.ts";
 
 export interface Task {
@@ -14,6 +15,8 @@ export interface Task {
   tz: string;
   active: boolean;
   owner?: string;
+  // Actor of its passages (OFFICE_ACTOR of the processes it starts); default routine:<id>.
+  actor?: string;
   description?: string;
   // Sphere of the routine's events (perso, pro); else the office of its owner.
   sphere?: string;
@@ -164,7 +167,7 @@ export interface TaskError {
   error: string;
 }
 
-export const FIELDS = ["description", "sphere", "rrule", "dtstart", "tz", "run", "acp", "close", "permissions", "steps", "cwd", "timeout", "owner", "on_failure", "alert_after", "meta", "active"] as const;
+export const FIELDS = ["description", "sphere", "rrule", "dtstart", "tz", "run", "acp", "close", "permissions", "steps", "cwd", "timeout", "owner", "actor", "on_failure", "alert_after", "meta", "active"] as const;
 export type Field = (typeof FIELDS)[number];
 const FIELD_SET = new Set<string>(FIELDS);
 const ID_RE = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/;
@@ -256,6 +259,8 @@ export function parseTask(id: string, file: string, text: string, config: Config
   if (onFailure !== undefined && onFailure.trim()) task.onFailure = onFailure;
   const owner = str("owner");
   if (owner !== undefined) task.owner = owner;
+  const actor = str("actor");
+  if (actor !== undefined && actor.trim()) task.actor = checkActor(actor, "actor");
   const cwd = str("cwd");
   if (cwd !== undefined) task.cwd = cwd;
   return task;

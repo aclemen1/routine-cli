@@ -206,9 +206,9 @@ func (m *model) footer() []string {
 	var keys string
 	switch m.screen {
 	case listScreen:
-		keys = "enter/l open · c new · E edit · t sort · T reverse · R run · space pause/resume · L last log · o session · # delete · / filter · X kill switch · ? keys · q quit"
+		keys = "enter/l open · c new · E edit · t sort · T reverse · R run · space pause/resume · L last log · o session · i greffier · @ cabinet · u undo · # delete · / filter · X kill switch · ? keys · q quit"
 	case detailScreen:
-		keys = "j/k runs · enter/l log · J/K scroll · R run · space pause/resume · E edit · o session · # delete · esc/h back · q quit"
+		keys = "j/k runs · enter/l log · J/K scroll · R run · space pause/resume · E edit · o session · i greffier · u undo · # delete · esc/h back · q quit"
 	default:
 		keys = "j/k scroll · J/K page · gg top · G follow · esc/h back · q quit"
 	}
@@ -221,8 +221,9 @@ func (m *model) footer() []string {
 func legend() []string {
 	return []string{
 		"j/k ↓/↑  move   gg/G  top, bottom   enter/l  open   esc/h  back   J/K  scroll the detail   r  reload   q  quit",
-		"c  new routine (form)   E  edit (form; the file in $EDITOR for steps)   R  run now   space  pause or resume   e/x/p  pause   u  resume",
+		"c  new routine (form)   E  edit (form; the file in $EDITOR for steps)   R  run now   space  pause or resume   e/x/p  pause",
 		"L  log of the last run   o  the run's ACP session (herdr tab)   #  delete, after typing the id   !  background jobs",
+		"i  a line for the greffier   @  CABINET pane   u  undo the last agent write on the routine (after confirming)",
 		"t  sort by id, next, last run, state, owner   T  reverse   /  filter by id, owner, description   X  kill switch   ?  hide",
 	}
 }
@@ -475,6 +476,7 @@ func (m *model) renderDetail() []string {
 		}
 		lines = append(lines, selectable(line, i == m.runCur, w))
 	}
+	undoOn := m.undoConfigured()
 	if len(r.Journal) > 0 {
 		lines = append(lines, "", sAccent.Render("Journal"))
 		for _, e := range r.Journal {
@@ -487,7 +489,12 @@ func (m *model) renderDetail() []string {
 					style = sErr
 				}
 			}
-			lines = append(lines, "  "+sMuted.Render(pad(clock(e.At), 16)+"  "+pad(e.Type, 6))+"  "+style.Render(trunc(clean(e.Text), w-30)))
+			mark, room := "", w-30
+			if undoOn && len(e.Undo) > 0 {
+				mark, room = sWork.Render("  ↶ undoable"), room-12
+			}
+			line := "  " + sMuted.Render(pad(clock(e.At), 16)+"  "+pad(e.Type, 6)) + "  " + style.Render(trunc(clean(e.Text), room)) + mark
+			lines = append(lines, line)
 		}
 	}
 	if strings.TrimSpace(r.Body) != "" {

@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { OFFICE_ACTOR, resolveActor, TOOL_BY } from "./actor.ts";
 import { checkTimeZone, loadConfig, type Config } from "./config.ts";
 import { formatDuration } from "./duration.ts";
 import { execScheduled, tick, type TickResult } from "./engine.ts";
@@ -139,6 +140,9 @@ function tickText(result: TickResult): string {
 
 const ID: Param = { name: "id", type: "string", positional: true, required: true, description: "Routine id: the path under the tasks directory without .md, e.g. office/perso-ingest." };
 
+// Every action that writes takes --by; see actor.ts for the resolution.
+const BY: Param = { name: "by", type: "string", description: `Actor of this write: human:AC@cli, agent:<id>, routine:<id> (default ${TOOL_BY}, then ${OFFICE_ACTOR}, then human:AC@cli on a terminal).` };
+
 const FIELDS: Param[] = [
   { name: "description", type: "string", description: "What the routine does, in one sentence; empty removes it." },
   { name: "sphere", type: "string", description: "Sphere of the routine's journal events: perso or pro (default: the office of its owner); empty removes it." },
@@ -155,6 +159,7 @@ const FIELDS: Param[] = [
   { name: "cwd", type: "string", description: "Working directory (default home)." },
   { name: "timeout", type: "string", description: "Longest run: 30s, 10m, 1h30m; with steps, the budget of the whole run." },
   { name: "owner", type: "string", description: "Label of the program that manages the routine, e.g. office:perso/P-0014." },
+  { name: "actor", type: "string", description: "Actor of its passages, set as OFFICE_ACTOR for the processes it starts (default routine:<id>), e.g. agent:greffier; empty removes it." },
   { name: "meta", type: "string", description: 'Free JSON object kept as is, e.g. {"states":["open","waiting"]}; empty removes it.' },
   { name: "on-failure", type: "string", description: "Alert command instead of the config's; none turns alerts off; empty removes it." },
   { name: "alert-after", type: "string", description: 'Alert after n failed runs in a row or dur failing, e.g. "3,30m"; empty removes it.' },
@@ -179,7 +184,7 @@ function routineInput(a: Record<string, unknown>, current?: RoutineInput["acp"])
   const input: RoutineInput = {};
   const str = (key: string) => a[key] as string | undefined;
   if (Array.isArray(a.rrule)) input.rrule = a.rrule as string[];
-  for (const key of ["description", "sphere", "dtstart", "tz", "cwd", "timeout", "owner"] as const) {
+  for (const key of ["description", "sphere", "dtstart", "tz", "cwd", "timeout", "owner", "actor"] as const) {
     const value = str(key);
     if (value !== undefined) input[key] = value === "" ? null : value;
   }
@@ -263,7 +268,7 @@ const ACTIONS: Action[] = [
     category: "routine",
     summary: "Create a routine: an rrule and one of --run, --acp-command or --steps. Only after the user agreed to it.",
     discussion: "A routine sends without review only to the user; for anyone else it writes a draft.",
-    params: [ID, ...FIELDS, { name: "paused", type: "boolean", description: "Create the routine paused." }],
+    params: [ID, ...FIELDS, { name: "paused", type: "boolean", description: "Create the routine paused." }, BY],
     examples: [
       'routine add backup --description "Back up the vault" --rrule "FREQ=DAILY;BYHOUR=2;BYMINUTE=0" --run "restic backup ~/vault"',
       'routine add brief --rrule "FREQ=DAILY;BYHOUR=7;BYMINUTE=0" --acp-command herdr-acp --acp-arg=--workspace --acp-arg routine --body-file prompt.md',
@@ -281,7 +286,7 @@ const ACTIONS: Action[] = [
     name: "edit",
     category: "routine",
     summary: "Change fields of a routine; an empty value removes an optional field; run, acp and steps replace one another. Only after the user agreed.",
-    params: [ID, ...FIELDS],
+    params: [ID, ...FIELDS, BY],
     examples: ['routine edit self-sync --timeout 20m', 'routine edit brief --description ""'],
     run: async (a) => {
       const { paths, config, ctx } = env();
@@ -294,7 +299,7 @@ const ACTIONS: Action[] = [
     name: "pause",
     category: "routine",
     summary: "Pause a routine; `routine run` still works.",
-    params: [ID],
+    params: [ID, BY],
     examples: ["routine pause self-sync"],
     run: async (a) => ({ result: await setActive(env().ctx, id(a), false) }),
     text: (s: Summary) => `paused ${s.id}`,
@@ -303,7 +308,7 @@ const ACTIONS: Action[] = [
     name: "resume",
     category: "routine",
     summary: "Resume a paused routine; occurrences missed while paused are not caught up.",
-    params: [ID],
+    params: [ID, BY],
     examples: ["routine resume self-sync"],
     run: async (a) => ({ result: await setActive(env().ctx, id(a), true) }),
     text: (s: Summary) => `resumed ${s.id}`,
@@ -312,7 +317,7 @@ const ACTIONS: Action[] = [
     name: "rm",
     category: "routine",
     summary: "Delete a routine and its schedule state. Only after the user agreed.",
-    params: [ID],
+    params: [ID, BY],
     examples: ["routine rm old-backup"],
     run: async (a) => ({ result: await removeRoutine(env().ctx, id(a)) }),
     text: (r: { id: string }) => `removed ${r.id}`,
@@ -404,7 +409,7 @@ const ACTIONS: Action[] = [
     name: "stop",
     category: "engine",
     summary: "Turn on the kill switch: no routine runs until `routine start`; running ones finish.",
-    params: [],
+    params: [BY],
     examples: ["routine stop"],
     run: async () => ({ result: await setStopped(env().ctx, true) }),
     text: statusText,
@@ -413,7 +418,7 @@ const ACTIONS: Action[] = [
     name: "start",
     category: "engine",
     summary: "Turn off the kill switch.",
-    params: [],
+    params: [BY],
     examples: ["routine start"],
     run: async () => ({ result: await setStopped(env().ctx, false) }),
     text: statusText,
@@ -585,7 +590,15 @@ async function main(argv: string[]): Promise<number> {
   }
   try {
     const parsed = parseAction(action, args);
+    let warnings: string[] = [];
+    if (action.params.includes(BY)) {
+      // Resolved before the write: a refusal writes nothing.
+      const actor = resolveActor({ by: parsed.by as string | undefined, tty: process.stdin.isTTY === true });
+      Object.assign(env().ctx, { actor, via: "cli" });
+      if (actor.warning) warnings = [actor.warning];
+    }
     const outcome = await action.run(parsed);
+    if (warnings.length) outcome.warnings = [...(outcome.warnings ?? []), ...warnings];
     if (action.streamed) return outcome.exitCode ?? 0;
     return emit(action, format, outcome);
   } catch (error) {

@@ -11,7 +11,7 @@ import type { Task } from "./task.ts";
 
 const WRITE_TIMEOUT_MS = 10_000;
 
-export type EventType = "run" | "alert" | "state" | "change";
+export type EventType = "run" | "alert" | "state" | "change" | "unsigned";
 
 export const ENGINE_SOURCE = "engine";
 // The engine is the user's own tooling: its events belong to the personal sphere.
@@ -34,6 +34,8 @@ export interface Event {
   type: EventType;
   sphere: string;
   text: string;
+  // The actor: the passage actor for a run or an alert, the resolved actor for a change.
+  by: string;
   at?: string;
   ref?: string;
 }
@@ -42,7 +44,7 @@ export async function writeEvent(config: Config, event: Event): Promise<boolean>
   const command = config.journal;
   if (!command?.length) return false;
   const [bin, ...base] = command;
-  const args = [...base, "add", "-", "--source", `routine:${event.id}`, "--type", event.type, "--sphere", event.sphere, "--by", "routine", "--at", event.at ?? new Date().toISOString()];
+  const args = [...base, "add", "-", "--source", `routine:${event.id}`, "--type", event.type, "--sphere", event.sphere, "--by", event.by, "--at", event.at ?? new Date().toISOString()];
   if (event.ref) args.push("--ref", event.ref);
   return new Promise<boolean>((resolve) => {
     let child;
@@ -66,13 +68,27 @@ export async function writeEvent(config: Config, event: Event): Promise<boolean>
   });
 }
 
+// The actor of a passage: the routine's own actor field, else routine:<id>.
+export function passageActor(task: { id: string; actor?: string }): string {
+  return task.actor ?? `routine:${task.id}`;
+}
+
 // An event about a routine: skipped when the routine has no sphere.
-export async function routineEvent(config: Config, task: { id: string; sphere?: string; owner?: string }, type: EventType, text: string, at?: string): Promise<boolean> {
+export async function routineEvent(config: Config, task: { id: string; sphere?: string; owner?: string }, type: EventType, text: string, by: string, at?: string): Promise<boolean> {
   const sphere = sphereOf(task);
   if (!sphere) return false;
-  const event: Event = { id: task.id, type, sphere, text };
+  const event: Event = { id: task.id, type, sphere, text, by };
   if (at) event.at = at;
   const ref = refOf(task.owner);
+  if (ref) event.ref = ref;
+  return writeEvent(config, event);
+}
+
+// A write without an actor: journaled under its routine (or the engine), in the routine's sphere,
+// else the engine's, so that none goes unseen.
+export function unsignedEvent(config: Config, target: { id: string; sphere?: string; owner?: string }, by: string, text: string): Promise<boolean> {
+  const event: Event = { id: target.id, type: "unsigned", sphere: sphereOf(target) ?? ENGINE_SPHERE, text, by };
+  const ref = refOf(target.owner);
   if (ref) event.ref = ref;
   return writeEvent(config, event);
 }
@@ -90,7 +106,7 @@ export function runText(record: RunRecord, tz: string, firstErrorLine?: string):
 }
 
 export function runEvent(config: Config, task: Task, record: RunRecord, firstErrorLine?: string): Promise<boolean> {
-  return routineEvent(config, task, "run", runText(record, task.tz, firstErrorLine), record.ended);
+  return routineEvent(config, task, "run", runText(record, task.tz, firstErrorLine), passageActor(task), record.ended);
 }
 
 // The first line of a failed run's log that reads like an error, else its last line.
@@ -111,6 +127,8 @@ export interface JournalEntry {
   type: string;
   text: string;
   by?: string;
+  // The reverse command of the entry, when it has one.
+  undo?: string[];
 }
 
 // The last entries of a routine's journal (config history.ls, JSON envelope with items),
@@ -124,7 +142,7 @@ export function readEvents(config: Config, task: { id: string; sphere?: string; 
   if (r.status !== 0 || !r.stdout) return [];
   try {
     const env = JSON.parse(r.stdout) as { result?: { items?: JournalEntry[] } };
-    return (env.result?.items ?? []).map(({ at, type, text, by }) => ({ at, type, text, ...(by ? { by } : {}) }));
+    return (env.result?.items ?? []).map(({ at, type, text, by, undo }) => ({ at, type, text, ...(by ? { by } : {}), ...(undo?.length ? { undo } : {}) }));
   } catch {
     return [];
   }

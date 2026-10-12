@@ -19,7 +19,10 @@ export interface Config {
   history?: { ls: string[]; limit: number };
 }
 
-const KEYS = new Set(["tz", "timeout", "shell", "env", "retention_days", "on_failure", "alert_after", "journal", "history"]);
+// greffier, cabinet and undo are the TUI's commands (keys i, @, u): read by the TUI, only checked here.
+const TUI_KEYS: Record<string, string[]> = { greffier: ["text"], cabinet: ["open"], undo: ["preview", "last"] };
+
+const KEYS = new Set(["tz", "timeout", "shell", "env", "retention_days", "on_failure", "alert_after", "journal", "history", ...Object.keys(TUI_KEYS)]);
 
 export function defaultConfig(): Config {
   return {
@@ -73,6 +76,17 @@ export function loadConfig(paths: Paths): Config {
     const limit = h.limit === undefined ? 10 : Number(h.limit);
     if (!Number.isInteger(limit) || limit < 0) throw new Error(`${paths.configFile}: history.limit must be an integer ≥ 0`);
     config.history = { ls: h.ls as string[], limit };
+  }
+  for (const [key, subs] of Object.entries(TUI_KEYS)) {
+    const v = data[key];
+    if (v === undefined || v === null) continue;
+    if (typeof v !== "object" || Array.isArray(v)) throw new Error(`${paths.configFile}: ${key} must be a mapping`);
+    for (const [sub, argv] of Object.entries(v as Record<string, unknown>)) {
+      if (!subs.includes(sub)) throw new Error(`${paths.configFile}: unknown key ${key}.${sub}`);
+      if (argv !== null && (!Array.isArray(argv) || !argv.every((s) => typeof s === "string"))) {
+        throw new Error(`${paths.configFile}: ${key}.${sub} must be a list of strings`);
+      }
+    }
   }
   if (data.alert_after !== undefined) config.alertAfter = { ...config.alertAfter, ...parseAlertAfter(data.alert_after, paths.configFile) };
   if (data.retention_days !== undefined) {

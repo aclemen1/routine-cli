@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { resolveActor } from "./actor.ts";
 import {
   addRoutine,
   checkRoutines,
@@ -53,6 +54,7 @@ const fields = {
   cwd: z.string().describe("Working directory (default home)"),
   timeout: z.string().describe("Duration such as 30s, 10m, 1h30m"),
   owner: z.string().describe("Label of the program that manages the routine, e.g. office:perso/P-0014"),
+  actor: z.string().describe("Actor of its passages, set as OFFICE_ACTOR for the processes it starts (default routine:<id>), e.g. agent:greffier"),
   meta: z.record(z.string(), z.unknown()).describe("Free object kept as is and returned by list and show; ignored for scheduling"),
   body: z.string().describe("Body: stdin of the command, or the ACP prompt"),
 };
@@ -79,6 +81,21 @@ function input(args: Record<string, unknown>): RoutineInput {
 export function createServer(ctx: Context): McpServer {
   const server = new McpServer({ name: "routine", version: "0.1.0" });
   const read = { readOnlyHint: true, openWorldHint: false };
+  // A write is an agent's call: its actor comes from the server's environment (ROUTINE_BY,
+  // OFFICE_ACTOR), resolved at each call as off a terminal. A warning follows the result.
+  function writing<A>(handler: (c: Context, args: A) => unknown | Promise<unknown>) {
+    return async (args: A) => {
+      try {
+        const actor = resolveActor({ tty: false });
+        const data = await handler({ ...ctx, actor, via: "mcp" }, args);
+        const out = result(data);
+        if (actor.warning) out.content.push({ type: "text" as const, text: `warning: ${actor.warning}` });
+        return out;
+      } catch (error) {
+        return { content: [{ type: "text" as const, text: (error as Error).message }], isError: true };
+      }
+    };
+  }
 
   server.registerTool(
     "routine_list",
@@ -110,7 +127,7 @@ export function createServer(ctx: Context): McpServer {
       },
       annotations: { destructiveHint: false, openWorldHint: false },
     },
-    guarded((args: Record<string, unknown>) => addRoutine(ctx, args.id as string, input(args), args.paused === true)),
+    writing((c, args: Record<string, unknown>) => addRoutine(c, args.id as string, input(args), args.paused === true)),
   );
   server.registerTool(
     "routine_edit",
@@ -125,12 +142,12 @@ export function createServer(ctx: Context): McpServer {
       },
       annotations: { destructiveHint: false, openWorldHint: false },
     },
-    guarded((args: Record<string, unknown>) => editRoutine(ctx, args.id as string, input(args))),
+    writing((c, args: Record<string, unknown>) => editRoutine(c, args.id as string, input(args))),
   );
   server.registerTool(
     "routine_pause",
     { description: "Pause a routine.", inputSchema: { id }, annotations: { idempotentHint: true, openWorldHint: false } },
-    guarded(({ id }) => setActive(ctx, id, false)),
+    writing((c, { id }: { id: string }) => setActive(c, id, false)),
   );
   server.registerTool(
     "routine_resume",
@@ -139,12 +156,12 @@ export function createServer(ctx: Context): McpServer {
       inputSchema: { id },
       annotations: { idempotentHint: true, openWorldHint: false },
     },
-    guarded(({ id }) => setActive(ctx, id, true)),
+    writing((c, { id }: { id: string }) => setActive(c, id, true)),
   );
   server.registerTool(
     "routine_remove",
     { description: `Delete a routine and its schedule state. ${AGREEMENT}`, inputSchema: { id }, annotations: { destructiveHint: true, openWorldHint: false } },
-    guarded(({ id }) => removeRoutine(ctx, id)),
+    writing((c, { id }: { id: string }) => removeRoutine(c, id)),
   );
   server.registerTool(
     "routine_run",
@@ -181,12 +198,12 @@ export function createServer(ctx: Context): McpServer {
       inputSchema: {},
       annotations: { idempotentHint: true, openWorldHint: false },
     },
-    guarded(() => setStopped(ctx, true)),
+    writing((c) => setStopped(c, true)),
   );
   server.registerTool(
     "routine_start",
     { description: "Turn off the kill switch.", inputSchema: {}, annotations: { idempotentHint: true, openWorldHint: false } },
-    guarded(() => setStopped(ctx, false)),
+    writing((c) => setStopped(c, false)),
   );
   return server;
 }

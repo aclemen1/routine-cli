@@ -65,3 +65,40 @@ test("MCP tools create, list, edit and remove routines", async () => {
     await client.close();
   }
 });
+
+test("an MCP write takes its actor from the server's environment, else warns", async () => {
+  const connect = async (extra: Record<string, string>) => {
+    const dir = mkdtempSync(join(tmpdir(), "routine-mcp-"));
+    const { ROUTINE_BY: _a, OFFICE_ACTOR: _b, ...base } = process.env as Record<string, string>;
+    const client = new Client({ name: "test", version: "0" });
+    await client.connect(
+      new StdioClientTransport({ command: process.execPath, args: [CLI, "mcp"], env: { ...base, ROUTINE_CONFIG_DIR: join(dir, "config"), ROUTINE_STATE_DIR: join(dir, "state"), ...extra } }),
+    );
+    return client;
+  };
+  const add = (client: Client) => client.callTool({ name: "routine_add", arguments: { id: "x", rrule: ["FREQ=DAILY"], run: "true" } }) as Promise<{ content: { text: string }[]; isError?: boolean }>;
+
+  let client = await connect({});
+  try {
+    const r = await add(client);
+    assert.equal(r.isError, undefined);
+    assert.match(r.content[1]!.text, /^warning: unsigned write, signed unknown:cli/);
+  } finally {
+    await client.close();
+  }
+  client = await connect({ OFFICE_ACTOR: "agent:office-P-0019" });
+  try {
+    const r = await add(client);
+    assert.equal(r.content.length, 1);
+  } finally {
+    await client.close();
+  }
+  client = await connect({ OFFICE_ACTOR: "user" });
+  try {
+    const r = await add(client);
+    assert.equal(r.isError, true);
+    assert.match(r.content[0]!.text, /OFFICE_ACTOR: invalid actor/);
+  } finally {
+    await client.close();
+  }
+});

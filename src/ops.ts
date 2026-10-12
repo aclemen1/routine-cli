@@ -7,7 +7,8 @@ import type { Paths } from "./paths.ts";
 import { nextOccurrences } from "./schedule.ts";
 import { lockHolder, lockSince, readJournal, readState, removeState, writeState, type RunRecord } from "./state.ts";
 import { conflict, locked, notFound, userError } from "./errors.ts";
-import { ENGINE_SOURCE, ENGINE_SPHERE, readEvents, routineEvent, sphereOf, writeEvent, type JournalEntry } from "./events.ts";
+import { resolveActor, type Actor } from "./actor.ts";
+import { ENGINE_SOURCE, ENGINE_SPHERE, readEvents, routineEvent, sphereOf, unsignedEvent, writeEvent, type JournalEntry } from "./events.ts";
 import {
   checkId,
   loadTasks,
@@ -29,7 +30,23 @@ import {
 export interface Context {
   paths: Paths;
   config: Config;
+  // The actor of the writes; resolved from the environment, as off a terminal, when absent.
+  actor?: Actor;
+  // Where the write comes from, for the unsigned entry: cli or mcp.
+  via?: string;
 }
+
+// The actor of a write, resolved before anything is written: a refusal leaves no trace.
+function writer(ctx: Context): Actor {
+  return ctx.actor ?? resolveActor({ tty: false });
+}
+
+// An unsigned write leaves an `unsigned` entry in the journal: the command and the tool.
+async function signed(ctx: Context, actor: Actor, target: { id: string; sphere?: string; owner?: string }, command: string): Promise<void> {
+  if (actor.unsigned) await unsignedEvent(ctx.config, target, actor.actor, `routine ${command} · tool routine via ${ctx.via ?? "cli"}`);
+}
+
+const ENGINE = { id: ENGINE_SOURCE, sphere: ENGINE_SPHERE };
 
 export interface RoutineInput {
   rrule?: string[];
@@ -49,6 +66,7 @@ export interface RoutineInput {
   cwd?: string | null;
   timeout?: string | null;
   owner?: string | null;
+  actor?: string | null;
   body?: string;
 }
 
@@ -56,6 +74,7 @@ export interface Summary {
   id: string;
   file: string;
   owner?: string;
+  actor?: string;
   description?: string;
   sphere?: string;
   onFailure?: string;
@@ -94,7 +113,7 @@ export interface EngineStatus {
   invalid: number;
 }
 
-const OPTIONAL = ["description", "sphere", "on_failure", "dtstart", "tz", "cwd", "timeout", "owner", "close", "permissions"] as const;
+const OPTIONAL = ["description", "sphere", "on_failure", "dtstart", "tz", "cwd", "timeout", "owner", "actor", "close", "permissions"] as const;
 
 // An empty string or null removes an optional field. Setting run drops acp and the reverse.
 function toFieldValues(input: RoutineInput): FieldValues {
@@ -167,6 +186,7 @@ export function summarize(ctx: Context, task: Task, nowMs = Date.now()): Summary
   const since = summary.running ? lockSince(ctx.paths, task.id) : null;
   if (since) summary.runningSince = since;
   if (task.owner) summary.owner = task.owner;
+  if (task.actor) summary.actor = task.actor;
   if (task.description) summary.description = task.description;
   const sphere = sphereOf(task);
   if (sphere) summary.sphere = sphere;
@@ -189,6 +209,7 @@ export function summarize(ctx: Context, task: Task, nowMs = Date.now()): Summary
 }
 
 export async function addRoutine(ctx: Context, id: string, input: RoutineInput, paused = false): Promise<Summary> {
+  const actor = writer(ctx);
   const file = taskFile(ctx.paths.tasks, id);
   if (existsSync(file)) throw conflict(`routine ${JSON.stringify(id)} already exists`);
   if (!input.rrule?.length) throw userError("a new routine needs rrule");
@@ -196,7 +217,8 @@ export async function addRoutine(ctx: Context, id: string, input: RoutineInput, 
   const task = writeValidated(ctx, file, id, { ...toFieldValues(input), active: !paused }, input.body);
   const since = new Date().toISOString();
   writeState(ctx.paths, id, paused ? { since, inactiveSeen: true } : { since });
-  await routineEvent(ctx.config, task, "change", `created${paused ? " paused" : ""} · ${task.schedule.text}`);
+  await routineEvent(ctx.config, task, "change", `created${paused ? " paused" : ""} · ${task.schedule.text}`, actor.actor);
+  await signed(ctx, actor, task, `add ${id}`);
   return summarize(ctx, task);
 }
 
@@ -209,13 +231,16 @@ function fieldsOf(input: RoutineInput): string {
 }
 
 export async function editRoutine(ctx: Context, id: string, input: RoutineInput): Promise<Summary> {
+  const actor = writer(ctx);
   const file = readTask(ctx.paths.tasks, id, ctx.config).file;
   const task = writeValidated(ctx, file, id, toFieldValues(input), input.body);
-  await routineEvent(ctx.config, task, "change", `edited: ${fieldsOf(input) || "nothing"} · ${task.schedule.text}`);
+  await routineEvent(ctx.config, task, "change", `edited: ${fieldsOf(input) || "nothing"} · ${task.schedule.text}`, actor.actor);
+  await signed(ctx, actor, task, `edit ${id}`);
   return summarize(ctx, task);
 }
 
 export async function setActive(ctx: Context, id: string, active: boolean): Promise<Summary> {
+  const actor = writer(ctx);
   const file = readTask(ctx.paths.tasks, id, ctx.config).file;
   const task = writeValidated(ctx, file, id, { active }, undefined);
   const now = new Date().toISOString();
@@ -224,11 +249,13 @@ export async function setActive(ctx: Context, id: string, active: boolean): Prom
     const { inactiveSeen: _, ...rest } = state;
     writeState(ctx.paths, id, { ...rest, since: now });
   } else writeState(ctx.paths, id, { ...state, inactiveSeen: true });
-  await routineEvent(ctx.config, task, "state", active ? "resumed" : "paused");
+  await routineEvent(ctx.config, task, "state", active ? "resumed" : "paused", actor.actor);
+  await signed(ctx, actor, task, `${active ? "resume" : "pause"} ${id}`);
   return summarize(ctx, task);
 }
 
 export async function removeRoutine(ctx: Context, id: string): Promise<{ id: string; removed: true }> {
+  const actor = writer(ctx);
   const file = taskFile(ctx.paths.tasks, id);
   if (!existsSync(file)) throw notFound(`no routine ${JSON.stringify(id)}`);
   let task: Task | { id: string } = { id };
@@ -239,7 +266,8 @@ export async function removeRoutine(ctx: Context, id: string): Promise<{ id: str
   }
   rmSync(file);
   removeState(ctx.paths, id);
-  await routineEvent(ctx.config, task, "change", "removed");
+  await routineEvent(ctx.config, task, "change", "removed", actor.actor);
+  await signed(ctx, actor, task, `rm ${id}`);
   return { id, removed: true };
 }
 
@@ -286,11 +314,13 @@ export function checkRoutines(ctx: Context): { valid: string[]; errors: TaskErro
 }
 
 export async function setStopped(ctx: Context, stopped: boolean): Promise<EngineStatus> {
+  const actor = writer(ctx);
   if (stopped) {
     mkdirSync(dirname(ctx.paths.stopFile), { recursive: true });
     writeFileSync(ctx.paths.stopFile, `${new Date().toISOString()}\n`);
   } else rmSync(ctx.paths.stopFile, { force: true });
-  await writeEvent(ctx.config, { id: ENGINE_SOURCE, type: "state", sphere: ENGINE_SPHERE, text: stopped ? "kill switch on: nothing runs" : "kill switch off: routines run on schedule" });
+  await writeEvent(ctx.config, { ...ENGINE, type: "state", text: stopped ? "kill switch on: nothing runs" : "kill switch off: routines run on schedule", by: actor.actor });
+  await signed(ctx, actor, ENGINE, stopped ? "stop" : "start");
   return engineStatus(ctx);
 }
 

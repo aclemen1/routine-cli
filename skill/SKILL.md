@@ -51,6 +51,7 @@ routine run <id>                           # now, outside the schedule
 - id: lowercase letters, digits, `.`, `_`, `-`; `/` separates segments.
 - `run`, `acp` and `steps` replace one another.
 - An argument that starts with `-` is written `--acp-arg=--flag`.
+- A write is signed by `--by`, else `ROUTINE_BY`, else `OFFICE_ACTOR`, else `human:AC@cli` on a terminal; a gesture of the TUI is always `human:AC@tui`. Actors: `human:AC@cli`, `agent:<id>`, `routine:<id>`. Unsigned: `unknown:cli` with a warning until 2026-10-19, refused (exit 2) after.
 
 ## Executors
 
@@ -64,7 +65,7 @@ routine run <id>                           # now, outside the schedule
 - herdr-acp needs a `cwd` that Claude Code trusts, else `--acp-arg=--trust-folders`.
 - `steps`: each step has `name`, `run` or `acp`, optional `timeout`, `cwd`, `continue_on_error`. A failed step skips the rest unless `continue_on_error: true`.
 - In a step's text: `{{run_dir}}`, `{{steps.<earlier step>.output}}`. `$ROUTINE_RUN_DIR` is shared by the steps; each leaves `<name>.out` there.
-- Environment: `ROUTINE_ID`, `ROUTINE_SCHEDULED`, `ROUTINE_LOG`, `ROUTINE_STEP`.
+- Environment: `ROUTINE_ID`, `ROUTINE_SCHEDULED`, `ROUTINE_LOG`, `ROUTINE_STEP`, `OFFICE_ACTOR=routine:<id>` (or the routine's `actor`; inherited `<TOOL>_BY` are dropped): every tool a passage calls signs as the routine.
 
 ## Schedule
 
@@ -115,7 +116,7 @@ Statuses: `ok`, `failed` (exit ≠ 0, or the turn did not end with `end_turn`), 
 
 ## TUI
 
-`routine tui`: `c` new routine (form), `E` edit (form; the file for steps), `enter`/`l` open, `esc`/`h` back, `q` quit, `t`/`T` sort, `/` filter, `R` run, `space` pause/resume, `L` last log, `o` the run's ACP session, `#` delete, `X` kill switch, `?` keys.
+`routine tui`: `c` new routine (form), `E` edit (form; the file for steps), `enter`/`l` open, `esc`/`h` back, `q` quit, `t`/`T` sort, `/` filter, `R` run, `space` pause/resume, `L` last log, `o` the run's ACP session, `#` delete, `X` kill switch, `i` a line for the greffier, `@` CABINET pane, `u` undo the last agent write on the routine (confirmed; an irreversible reverse goes through `undo tui --select <id>`), `?` keys. Config keys `greffier.text`, `cabinet.open`, `undo.preview`, `undo.last`; the selection is written to the shared focus as `routine:<id>`.
 
 ## Channels
 

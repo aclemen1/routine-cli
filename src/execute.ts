@@ -4,7 +4,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
+import { OFFICE_ACTOR, withoutToolActors } from "./actor.ts";
 import type { Config } from "./config.ts";
+import { passageActor } from "./events.ts";
 import { expandHome, type Paths } from "./paths.ts";
 import type { RunRecord, RunStatus, StepRecord } from "./state.ts";
 import type { AcpSpec, Step, Task } from "./task.ts";
@@ -64,9 +66,11 @@ export async function runTask(task: Task, config: Config, paths: Paths, options:
   for (let n = 2; existsSync(join(logDir, `${base}.log`)); n++) base = `${stamp(started)}-${n}`;
   const log = join(logDir, `${base}.log`);
   const out = openSync(log, "a");
+  // Every process of a passage acts as the routine: OFFICE_ACTOR names it for the tools it calls.
   const env: NodeJS.ProcessEnv = {
-    ...process.env,
+    ...withoutToolActors(process.env),
     ...config.env,
+    [OFFICE_ACTOR]: passageActor(task),
     ROUTINE_ID: task.id,
     ROUTINE_LOG: log,
     ...(options.scheduled ? { ROUTINE_SCHEDULED: options.scheduled } : {}),

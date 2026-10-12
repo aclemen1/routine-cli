@@ -128,11 +128,16 @@ type model struct {
 	msg       string
 	msgErr    bool
 	scrollDet int
+
+	// cfg holds the commands of i, @ and u; focus writes the shared focus.
+	cfg      tuiConfig
+	focus    *tuikit.Focus
+	focusRef string
 }
 
 func main() {
 	tuikit.SetLanguage(tuikit.English)
-	m := &model{follow: true, busy: tuikit.NewBusy()}
+	m := &model{follow: true, busy: tuikit.NewBusy(), cfg: loadConfig(), focus: tuikit.NewFocus("routine")}
 	m.restore(loadState())
 	for i, arg := range os.Args[1:] {
 		switch {
@@ -294,7 +299,25 @@ func (m *model) keepSelection() {
 	m.clamp()
 }
 
+// Update handles a message, then writes the shared focus when the routine
+// the TUI is on changed.
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.focus != nil {
+		if cmd, ok := m.focus.Update(msg); ok {
+			return m, cmd
+		}
+	}
+	model, cmd := m.update(msg)
+	if m.focus == nil {
+		return model, cmd
+	}
+	if f := m.syncFocus(); f != nil {
+		cmd = tea.Batch(cmd, f)
+	}
+	return model, cmd
+}
+
+func (m *model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if cmd, ok := m.busy.Update(msg); ok {
 		return m, cmd
 	}
@@ -350,6 +373,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.screen == detailScreen {
 			m.screen = listScreen
 		}
+	case sayMsg:
+		m.say(msg.text, msg.isErr)
+	case undoPreviewMsg:
+		if !m.modal.Open() {
+			m.confirmUndo(msg)
+		}
+	case undoneMsg:
+		m.say(msg.id+": undone", false)
 	case editLoaded:
 		if !m.modal.Open() {
 			m.openRoutineForm(&msg.r)
@@ -461,6 +492,9 @@ func (m *model) key(k tea.KeyPressMsg) tea.Cmd {
 		return nil
 	case "X":
 		return m.killSwitch()
+	}
+	if cmd, ok := m.commonKey(key); ok {
+		return cmd
 	}
 	switch m.screen {
 	case listScreen:
@@ -589,12 +623,6 @@ func (m *model) routineKey(k, id, file string, r *routine) tea.Cmd {
 			return nil
 		}
 		return m.action("pause "+id, id+": paused", "pause", id)
-	case "u":
-		if r != nil && r.Active {
-			m.say(id+" is already active", true)
-			return nil
-		}
-		return m.action("resume "+id, id+": resumed, missed occurrences are not caught up", "resume", id)
 	case "E":
 		if r != nil {
 			ok, why := formable(r)

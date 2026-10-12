@@ -3,7 +3,7 @@ import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Config } from "./config.ts";
 import { runTask } from "./execute.ts";
-import { firstErrorLine, routineEvent, runEvent } from "./events.ts";
+import { firstErrorLine, passageActor, routineEvent, runEvent } from "./events.ts";
 import { handleAlert } from "./notify.ts";
 import type { Paths } from "./paths.ts";
 import { dueOccurrence, nextOccurrences } from "./schedule.ts";
@@ -95,7 +95,7 @@ async function alertAfterRun(task: Task, config: Config, state: TaskState, recor
   // The journal drops the ok runs of frequent routines: a recovery is written as an alert too.
   if (record.status === "ok" && state.failStreak) {
     const n = state.failStreak;
-    await routineEvent(config, task, "alert", `ok again after ${n} failed run${n > 1 ? "s" : ""}${state.alerted ? ", recovery sent" : ""}`, record.ended);
+    await routineEvent(config, task, "alert", `ok again after ${n} failed run${n > 1 ? "s" : ""}${state.alerted ? ", recovery sent" : ""}`, passageActor(task), record.ended);
   }
   const [next] = task.active ? nextOccurrences(task.schedule, nowMs, 1) : [];
   return handleAlert(task, config, state, record, nowMs, next ?? null);

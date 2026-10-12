@@ -89,6 +89,8 @@ type journalEntry struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
 	By   string `json:"by,omitempty"`
+	// Undo is the reverse command of the entry, when it has one.
+	Undo []string `json:"undo,omitempty"`
 }
 
 type invalid struct {
@@ -122,9 +124,15 @@ func cli() []string {
 	return []string{"routine"}
 }
 
+// tuiActor signs every gesture of the TUI, whatever the environment.
+const tuiActor = "human:AC@tui"
+
+// command runs the CLI with ROUTINE_BY=human:AC@tui; ROUTINE_BY and OFFICE_ACTOR inherited from the shell are ignored.
 func command(args ...string) *exec.Cmd {
 	argv := append(cli(), args...)
-	return exec.Command(argv[0], argv[1:]...)
+	cmd := exec.Command(argv[0], argv[1:]...)
+	cmd.Env = append(os.Environ(), "ROUTINE_BY="+tuiActor)
+	return cmd
 }
 
 // envelope is what routine prints: {ok, result} or {ok: false, error}.

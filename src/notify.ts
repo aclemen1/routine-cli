@@ -4,7 +4,8 @@ import { homedir } from "node:os";
 import type { Config } from "./config.ts";
 import type { RunRecord } from "./state.ts";
 import type { Task } from "./task.ts";
-import { routineEvent } from "./events.ts";
+import { OFFICE_ACTOR, withoutToolActors } from "./actor.ts";
+import { passageActor, routineEvent } from "./events.ts";
 
 const NOTIFY_TIMEOUT_MS = 60_000;
 const TAIL_LINES = 12;
@@ -103,8 +104,9 @@ export async function notify(task: Task, config: Config, record: RunRecord, even
     const child = spawn(shell!, [...shellArgs, command], {
       cwd: homedir(),
       env: {
-        ...process.env,
+        ...withoutToolActors(process.env),
         ...config.env,
+        [OFFICE_ACTOR]: passageActor(task),
         ROUTINE_ID: task.id,
         ROUTINE_EVENT: event,
         ROUTINE_STATUS: record.status,
@@ -127,7 +129,7 @@ export async function notify(task: Task, config: Config, record: RunRecord, even
       clearTimeout(timer);
       note(`${event}: ${code === 0 ? "sent" : `on_failure exited ${code}`}${output.trim() ? ` · ${output.trim().split("\n").at(-1)}` : ""}`);
       if (code === 0 && event === "failed") {
-        void routineEvent(config, task, "alert", `alert sent: ${record.status}, ${alert.failStreak ?? 1} failed run(s)`).finally(() => resolve(true));
+        void routineEvent(config, task, "alert", `alert sent: ${record.status}, ${alert.failStreak ?? 1} failed run(s)`, passageActor(task)).finally(() => resolve(true));
       } else resolve(code === 0);
     });
   });

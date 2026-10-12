@@ -44,6 +44,7 @@ Text passed on stdin.
 | `cwd` | Working directory | home |
 | `timeout` | `30s`, `10m`, `1h30m`; with `steps`, the budget of the whole run | config `timeout` |
 | `owner` | Free label for the program that manages the routine | none |
+| `actor` | Actor of its passages: `OFFICE_ACTOR` of every process it starts, `--by` of its run and alert events | `routine:<id>` |
 | `on_failure` | Alert command, instead of the config's; `none` turns alerts off | config `on_failure` |
 | `alert_after` | `{ failures, duration }`, instead of the config's | config `alert_after` |
 | `meta` | Free mapping kept as is, returned by `ls` and `show`, ignored for scheduling | none |
@@ -53,7 +54,7 @@ A one-shot routine is `FREQ=DAILY;COUNT=1` with `dtstart` set to its time.
 
 `ls`, `show`, the TUI and the JSON (`recurrence`) describe the rules in plain English, e.g. "every day at 6:03 AM; every day at 12:35 PM and 6:35 PM".
 
-The command runs in `shell` (default `/bin/zsh -lc`, so the login profile is read) with `ROUTINE_ID`, `ROUTINE_SCHEDULED` (the occurrence, UTC) and `ROUTINE_LOG` in its environment.
+The command runs in `shell` (default `/bin/zsh -lc`, so the login profile is read) with `ROUTINE_ID`, `ROUTINE_SCHEDULED` (the occurrence, UTC), `ROUTINE_LOG` and `OFFICE_ACTOR` (below) in its environment.
 
 ## ACP routines
 
@@ -120,13 +121,34 @@ on_failure: office tell desk --file /dev/stdin   # optional
 alert_after: { failures: 3, duration: 30m }
 journal: [logbook]                              # optional
 history: { ls: [logbook, ls, --source, "routine:{id}", --limit, "{limit}", --format, json], limit: 10 }   # optional
+# TUI keys i, @, u ({ref} is routine:<id>, {sphere} its sphere); optional
+greffier: {text: [greffier, text, "-", --focus, "{ref}", --sphere, "{sphere}"]}
+cabinet: {open: []}
+undo:
+  preview: [undo, last, --ref, "{ref}", --dry-run]
+  last: [undo, last, --ref, "{ref}"]
 ```
 
-`history.ls` lists a routine's last journal entries as a JSON envelope with `items` ({id}, {sphere}, {limit} are replaced): `show` returns them as `history` and prints them under "Journal", as does the TUI detail; an empty or failed read shows nothing.
+`history.ls` lists a routine's last journal entries as a JSON envelope with `items` ({id}, {sphere}, {limit} are replaced): `show` returns them as `history` (with an entry's `undo` when it carries one) and prints them under "Journal", as does the TUI detail; an empty or failed read shows nothing. `greffier`, `cabinet` and `undo` are read by the TUI only; quote the `-` of a flow list (`"-"`), which YAML does not take bare.
 
-`journal` names the command that records events. routine runs `<journal> add - --source routine:<id> --type <type> --sphere <sphere> --by routine --at <time> [--ref office:<dossier>]` with the text on stdin; a failed write never holds a run back. Types: `run` ("ok · 24s · scheduled 07:00", "failed exit 1 · 1m02s · manual · <first error line>"), `alert` (alert sent, ok again after failures), `state` (paused, resumed; the kill switch under `routine:engine`), `change` (created, edited, removed). A routine with no sphere writes nothing; `routine check` warns about it.
+`journal` names the command that records events. routine runs `<journal> add - --source routine:<id> --type <type> --sphere <sphere> --by <actor> --at <time> [--ref office:<dossier>]` with the text on stdin; a failed write never holds a run back. Types: `run` ("ok · 24s · scheduled 07:00", "failed exit 1 · 1m02s · manual · <first error line>"), `alert` (alert sent, ok again after failures), `state` (paused, resumed; the kill switch under `routine:engine`), `change` (created, edited, removed). `--by` is the passage actor for `run` and `alert`, the actor of the write for `state` and `change`; `unsigned` records a write without an actor (below). A routine with no sphere writes nothing; `routine check` warns about it.
 
-`on_failure` runs once when a failing routine crosses `alert_after`: that many failed runs in a row, or that long failing, or at its first failure when its next run comes later than that (a daily routine alerts at once, one that runs every 5 minutes after 15 minutes). It runs again when the routine is `ok`, only if the alert went out; an alert that could not be sent is tried again on the next failed run. It gets the message on stdin (id, status, error, failed runs, description, log path, last lines of the log) and `ROUTINE_ID`, `ROUTINE_EVENT` (`failed` or `recovered`), `ROUTINE_STATUS`, `ROUTINE_LOG`, `ROUTINE_ERROR`. Its outcome is written at the end of the run log; it never changes the run's status.
+`on_failure` runs once when a failing routine crosses `alert_after`: that many failed runs in a row, or that long failing, or at its first failure when its next run comes later than that (a daily routine alerts at once, one that runs every 5 minutes after 15 minutes). It runs again when the routine is `ok`, only if the alert went out; an alert that could not be sent is tried again on the next failed run. It gets the message on stdin (id, status, error, failed runs, description, log path, last lines of the log) and `ROUTINE_ID`, `OFFICE_ACTOR`, `ROUTINE_EVENT` (`failed` or `recovered`), `ROUTINE_STATUS`, `ROUTINE_LOG`, `ROUTINE_ERROR`. Its outcome is written at the end of the run log; it never changes the run's status.
+
+## Provenance
+
+Every passage (scheduled or `routine run`, command, ACP agent, each step, the `on_failure` alert) runs with `OFFICE_ACTOR=routine:<id>`, or the routine's `actor`; inherited `<TOOL>_BY` variables are dropped, so every tool it calls signs as the routine.
+
+A write (`add`, `edit`, `pause`, `resume`, `rm`, `stop`, `start`) is signed by the first of:
+
+1. `--by <actor>`;
+2. `ROUTINE_BY`;
+3. `OFFICE_ACTOR` (set by office in a dossier session, by routine in a passage);
+4. on a terminal (stdin is a TTY), `human:AC@cli`.
+
+A gesture of the TUI is always `human:AC@tui`, passed to the CLI as `ROUTINE_BY`, and to the commands of `i`, `@` and `u` as `OFFICE_ACTOR` (inherited `<TOOL>_BY` dropped): the environment it inherits is ignored.
+
+An actor is `human:<who>@<surface>`, `agent:<id>` or `routine:<id>`; anything else is a `user_error`. Without an actor, until 2026-10-19 (Europe/Zurich) included, the write is signed `unknown:cli`, the JSON envelope carries `warnings` (a `warning:` line on stderr in text), and the journal gets an `unsigned` entry (the command and the tool). From 2026-10-20 it is refused: exit 2, `user_error`. The MCP server is an agent: it reads `ROUTINE_BY` or `OFFICE_ACTOR` from its environment, else follows the same rule, the warning as a second text item.
 
 ## Schedule rules
 
@@ -145,9 +167,9 @@ Every action prints a JSON envelope by default, `{"ok":true,"result":…}` or `{
 routine ls [--owner <owner>[*]]
 routine show <id> [-n <count>]
 routine add <id> --rrule <RRULE> (--run <command> | --acp-command <cmd> [--acp-arg=<arg>…] [--acp-meta <json>] [--close --permissions] | --steps <json>)
-              [--description --dtstart --tz --cwd --timeout --owner --meta <json> --on-failure --alert-after --body | --body-file] [--paused]
+              [--description --dtstart --tz --cwd --timeout --owner --actor --meta <json> --on-failure --alert-after --body | --body-file] [--paused] [--by <actor>]
 routine edit <id> [same options]       # an empty value removes an optional field
-routine pause <id> | resume <id> | rm <id>
+routine pause <id> | resume <id> | rm <id>   # each write takes --by <actor>
 routine run <id>                       # now, outside the schedule; exit 1 when the run fails
 routine log [<id>] [-n <count>]
 routine check                          # exit 1 when a file is invalid
@@ -161,14 +183,14 @@ routine skill [show|install] | version | tui [--select <id>] | mcp
 |---|---|---|
 | 0 | | done |
 | 1 | `error` | failed; or the run (`run`) or a file (`check`) did not succeed, with `ok: true` |
-| 2 | `user_error` | bad argument, invalid routine |
+| 2 | `user_error` | bad argument, invalid routine, no actor after 2026-10-19 |
 | 3 | `not_found` | no such routine |
 | 4 | `conflict` | the routine already exists |
 | 5 | `locked` | the routine is running |
 
 ## TUI
 
-`routine tui` lists routines with their description, state (a spinner marks a running one), next occurrence, last run, recurrence in plain English and owner; `enter` opens a routine (rules, next occurrences, executor or steps, meta, body, recent runs with each step's status) and a run's log, followed live. `c` opens a form for a new routine (id, description, type command or agent, recurrence from presets or any RRULE, command or prompt, directory, timeout); `E` opens the same form filled in, or the file in `$EDITOR` for a routine with steps or several rules; office's routines are changed with `office routine`. The recurrence is checked and shown in plain English before saving. Every input goes through a tuikit modal. Keys follow the common TUI convention: `j`/`k` move, `gg`/`G` top/bottom, `enter`/`l` open, `esc`/`h` back, `J`/`K` scroll the detail, `/` filter, `t`/`T` sort/reverse (id, next, last run, state, owner), `r` reload, `R` run now, `space` pause or resume, `e`/`x` pause, `c` new, `E` edit, `L` last log, `o` the run's ACP session (herdr tab, from herdr-acp's pane records), `#` delete after typing the id, `X` kill switch, `?` keys, `q` quit. Kept during the transition: `p`/`u` pause/resume, `S` reverse, `D` delete. It reads and changes everything through `routine … --json`, and keeps its sort, filter, legend and selection in `tui.json` in the user's config directory.
+`routine tui` lists routines with their description, state (a spinner marks a running one), next occurrence, last run, recurrence in plain English and owner; `enter` opens a routine (rules, next occurrences, executor or steps, meta, body, recent runs with each step's status) and a run's log, followed live. `c` opens a form for a new routine (id, description, type command or agent, recurrence from presets or any RRULE, command or prompt, directory, timeout); `E` opens the same form filled in, or the file in `$EDITOR` for a routine with steps or several rules; office's routines are changed with `office routine`. The recurrence is checked and shown in plain English before saving. Every input goes through a tuikit modal. Keys follow the common TUI convention: `j`/`k` move, `gg`/`G` top/bottom, `enter`/`l` open, `esc`/`h` back, `J`/`K` scroll the detail, `/` filter, `t`/`T` sort/reverse (id, next, last run, state, owner), `r` reload, `R` run now, `space` pause or resume, `e`/`x` pause, `c` new, `E` edit, `L` last log, `o` the run's ACP session (herdr tab, from herdr-acp's pane records), `#` delete after typing the id, `X` kill switch, `?` keys, `q` quit. Common keys: `i` sends a line to the greffier (TextArea, then `greffier.text` with the text on stdin; its proposal and doubts come back in the footer), `@` opens the CABINET pane (`cabinet.open`), `u` undoes the last agent write on the routine (`undo.preview`, a confirmation showing the entry and its reverse, then `undo.last`; a reverse marked irreversible is never run from the TUI and points to `undo tui --select <id>`). The detail's Journal marks an entry carrying a reverse `↶ undoable` when `undo.last` is configured. A key whose command is missing or empty says so. The selected routine is written to the shared focus (`~/.local/state/office/focus.json`, `$OFFICE_FOCUS`) as `routine:<id>`. Kept during the transition: `p` pause, `S` reverse, `D` delete; resuming is `space`. It reads and changes everything through `routine … --json`, and keeps its sort, filter, legend and selection in `tui.json` in the user's config directory.
 
 Built with Go and Bubble Tea: `npm run build:tui` (`tui/build.sh` stamps the short commit, shown in the header). When its binary is rebuilt, or on `SIGUSR1`, the TUI reloads itself by `exec`, keeping its view, routine, sort, filter and selection; during input, a confirmation or an open editor it shows "new version" and reloads once idle.
 

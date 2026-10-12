@@ -1,15 +1,21 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
 const CLI = join(import.meta.dirname, "cli.ts");
 
+// The environment without an actor: a test signs only what it says.
+function actorless(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  const { ROUTINE_BY: _a, OFFICE_ACTOR: _b, ...env } = process.env;
+  return { ...env, ...extra };
+}
+
 function cli(dir: string, ...args: string[]) {
   const result = spawnSync(process.execPath, [CLI, ...args], {
-    env: { ...process.env, ROUTINE_CONFIG_DIR: join(dir, "config"), ROUTINE_STATE_DIR: join(dir, "state") },
+    env: { ...actorless(), ROUTINE_CONFIG_DIR: join(dir, "config"), ROUTINE_STATE_DIR: join(dir, "state") },
     encoding: "utf8",
   });
   return { code: result.status, stdout: result.stdout, stderr: result.stderr };
@@ -173,6 +179,19 @@ test("show adds the last journal entries from the journal command, and hides an 
   assert.equal(call(dir, "show", "j").result.history, undefined);
 });
 
+test("the TUI's commands are accepted in the config, an undo carried by an entry is kept", () => {
+  const dir = setup();
+  const bin = join(dir, "journal.sh");
+  writeFileSync(bin, `#!/bin/sh\necho '{"ok":true,"result":{"items":[{"at":"2026-10-10T05:00:00Z","type":"pause","text":"paused","by":"agent:greffier","undo":["routine","resume","j"]}],"count":1}}'\n`);
+  spawnSync("chmod", ["+x", bin]);
+  const tui = `greffier: {text: [greffier, text, "-", --focus, "{ref}", --sphere, "{sphere}"]}\ncabinet: {open: []}\nundo: {preview: [undo, last, --ref, "{ref}", --dry-run], last: [undo, last, --ref, "{ref}"]}\n`;
+  writeFileSync(join(dir, "config", "config.yaml"), `tz: Europe/Zurich\nshell: [/bin/sh, -c]\nhistory: { ls: [${bin}] }\n${tui}`);
+  call(dir, "add", "j", "--rrule", "FREQ=DAILY", "--run", "true", "--sphere", "perso");
+  assert.deepEqual(call(dir, "show", "j").result.history[0].undo, ["routine", "resume", "j"]);
+  writeFileSync(join(dir, "config", "config.yaml"), "tz: Europe/Zurich\nundo: {redo: [x]}\n");
+  assert.match(call(dir, "ls").error?.message ?? "", /unknown key undo\.redo/);
+});
+
 test("skill show prints the embedded skill, install writes it", () => {
   const dir = setup();
   const shown = cli(dir, "skill", "show");
@@ -184,4 +203,46 @@ test("skill show prints the embedded skill, install writes it", () => {
   assert.equal(r.stdout, `installed ${join(target, "SKILL.md")}\n`);
   assert.equal(readFileSync(join(target, "SKILL.md"), "utf8"), shown.stdout);
   assert.equal(cli(dir, "skill", "remove").code, 2);
+});
+
+test("a write without an actor warns and journals an unsigned entry; --by and ROUTINE_BY sign it", () => {
+  const dir = setup();
+  const journal = join(dir, "journal.log");
+  const bin = join(dir, "journal.sh");
+  writeFileSync(bin, `#!/bin/sh\necho "$*" >> ${journal}\ncat >> ${journal}\necho >> ${journal}\n`);
+  chmodSync(bin, 0o755);
+  writeFileSync(join(dir, "config", "config.yaml"), `tz: Europe/Zurich\nshell: [/bin/sh, -c]\njournal: [${bin}]\n`);
+  const run = (extra: Record<string, string>, ...args: string[]) => {
+    const r = spawnSync(process.execPath, [CLI, ...args], {
+      env: actorless({ ROUTINE_CONFIG_DIR: join(dir, "config"), ROUTINE_STATE_DIR: join(dir, "state"), ...extra }),
+      encoding: "utf8",
+    });
+    return { code: r.status, stdout: r.stdout, stderr: r.stderr };
+  };
+
+  let r = run({}, "add", "brief", "--rrule", "FREQ=DAILY", "--run", "true", "--sphere", "perso");
+  let env = JSON.parse(r.stdout);
+  assert.equal(env.ok, true);
+  assert.match(env.warnings[0], /^unsigned write, signed unknown:cli: pass --by <actor>/);
+  let log = readFileSync(journal, "utf8");
+  assert.match(log, /--type change --sphere perso --by unknown:cli/);
+  assert.match(log, /--source routine:brief --type unsigned --sphere perso --by unknown:cli .*\nroutine add brief · tool routine via cli/);
+
+  r = run({}, "pause", "brief", "--format", "text");
+  assert.match(r.stderr, /^warning: unsigned write/);
+
+  r = run({}, "resume", "brief", "--by", "agent:office-P-0019");
+  assert.equal(JSON.parse(r.stdout).warnings, undefined);
+  r = run({ ROUTINE_BY: "human:AC@tui", OFFICE_ACTOR: "agent:office-P-0019" }, "edit", "brief", "--timeout", "5m");
+  r = run({ OFFICE_ACTOR: "agent:office-P-0019" }, "stop");
+  log = readFileSync(journal, "utf8");
+  assert.match(log, /--type state --sphere perso --by agent:office-P-0019 [^\n]*\nresumed/);
+  assert.match(log, /--type change --sphere perso --by human:AC@tui [^\n]*\nedited: timeout/);
+  assert.match(log, /--source routine:engine --type state --sphere perso --by agent:office-P-0019/);
+  assert.equal(log.match(/--type unsigned/g)!.length, 2);
+
+  r = run({}, "rm", "brief", "--by", "user");
+  env = JSON.parse(r.stdout);
+  assert.deepEqual([r.code, env.error.kind], [2, "user_error"]);
+  assert.ok(existsSync(join(dir, "config", "tasks", "brief.md")));
 });

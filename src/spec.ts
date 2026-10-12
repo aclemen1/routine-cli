@@ -21,6 +21,8 @@ export interface Outcome {
   result?: unknown;
   // Exit code when the action ran but its object did not succeed (a failed run, an invalid file).
   exitCode?: number;
+  // Shown with the result: `warnings` of the JSON envelope, `warning:` lines on stderr in text.
+  warnings?: string[];
 }
 
 export interface Action {
@@ -100,13 +102,15 @@ export function emit(a: Action | undefined, format: string | undefined, outcome:
     return e.code;
   }
   const result = outcome?.result;
+  const warnings = outcome?.warnings?.length ? outcome.warnings : undefined;
   if (fmt === "text") {
+    for (const w of warnings ?? []) process.stderr.write(`warning: ${w}\n`);
     if (a?.text && result !== undefined) {
       const out = a.text(result as never);
       if (out) process.stdout.write(out.endsWith("\n") ? out : `${out}\n`);
     } else if (typeof result === "string") process.stdout.write(result.endsWith("\n") ? result : `${result}\n`);
     else if (result !== undefined) write(result);
-  } else write(result === undefined ? { ok: true } : { ok: true, result });
+  } else write({ ok: true, ...(result === undefined ? {} : { result }), ...(warnings ? { warnings } : {}) });
   return outcome?.exitCode ?? 0;
 }
 
