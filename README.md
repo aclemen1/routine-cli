@@ -1,3 +1,5 @@
+> **Ce dépôt est archivé.** Depuis le 12.10.2026, le code vit dans le monorepo privé `aclemen1/jarvis`, sous `routine/`. Ce dépôt ne reçoit plus de changements.
+
 # routine
 
 Runs scheduled routines. A routine is a Markdown file: its frontmatter gives an iCalendar RRULE and a command, its body is passed to the command on stdin.
